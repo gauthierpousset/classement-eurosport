@@ -1,4 +1,4 @@
-name: keepalive
+name: Garder la base Supabase éveillée
 on:
   schedule:
     - cron: '17 6 */2 * *'
@@ -8,9 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ping Supabase
+      - name: Réveiller la base
         run: |
           URL=$(grep -oP "SUPABASE_URL:\s*'\K[^']+" docs/config.js)
           KEY=$(grep -oP "SUPABASE_ANON_KEY:\s*'\K[^']+" docs/config.js)
           case "$URL" in COLLE_ICI*|"") echo "config.js pas encore rempli"; exit 1;; esac
-          curl -fsS -X POST "$URL/rest/v1/rpc/server_info" -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}'
+          AUTH=()
+          case "$KEY" in eyJ*) AUTH=(-H "Authorization: Bearer $KEY");; esac
+          curl -fsS -X POST "$URL/rest/v1/rpc/server_info" -H "apikey: $KEY" "${AUTH[@]}" -H "Content-Type: application/json" -d '{}'
