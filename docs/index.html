@@ -75,6 +75,21 @@ label.lab{display:block;font-size:.72rem;font-weight:600;letter-spacing:.08em;te
 .note{font-size:.84rem;color:var(--muted)}
 .neg{color:var(--red)} .pos{color:var(--green);font-weight:600} .zero{color:var(--muted);font-weight:400}
 .sp{display:inline-block;width:1.4em;text-align:center;flex:none}
+.pt{border:1px solid var(--line);border-radius:12px;background:var(--bg2);margin:8px 0;padding:8px 8px 9px;position:relative;transition:box-shadow .15s}
+.pt1{display:grid;grid-template-columns:34px 2.4ch 1.4em 1fr auto;gap:6px;align-items:center}
+.pt .num{font-family:var(--display);font-weight:700;font-size:1.2rem;color:var(--muted);text-align:right}
+.pt input,.pt select{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:1rem}
+.pt input.dup{border-color:var(--red)}
+.pt2{display:none;grid-template-columns:7.2em 1fr;gap:6px;margin:7px 0 0 40px}
+.pt.filled .pt2{display:grid}
+.pt2 select{font-size:.85rem;padding:8px 4px}.pt2 input{font-size:.85rem;font-style:italic}
+.grip{touch-action:none;cursor:grab;border:0;background:transparent;color:var(--muted);font-size:1.5rem;line-height:1;height:40px;width:34px;border-radius:8px;user-select:none;-webkit-user-select:none}
+.mv{display:flex;gap:4px}.mv button{border:1px solid var(--line);background:transparent;color:inherit;width:34px;height:36px;border-radius:8px;font-size:.8rem;cursor:pointer}.mv button:disabled{opacity:.3}
+.pt.reserve{opacity:.8;border-style:dashed}
+.pt-sep{margin:14px 0 4px;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:center}
+.pt.dragging{z-index:5;box-shadow:0 10px 28px rgba(0,0,0,.35);opacity:.95;transition:none}
+.pt.drop{outline:2px dashed var(--gold);outline-offset:2px}
+
 .badge{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;padding:3px 10px;border-radius:99px;background:var(--surface2);border:1px solid var(--line)}
 .badge.admin{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
 
@@ -370,7 +385,7 @@ let API = null, STATE = null;
 const clock = { offset: 0 };
 const serverNow = () => Date.now() + clock.offset;
 const ui = { save: '', saveErr: false, dirty: false, metric: 'total', view: 'classement', auth: null, msg: '', msgErr: false,
-  joinOpen: false, createOpen: false, codeOpen: false, joinMsg: '', createMsg: '', profile: null, step: null, stepN: -1, manage: null, resetFor: null, confirmDelete: false, confirmLeague: null };
+  joinOpen: false, createOpen: false, codeOpen: false, pseudoOpen: false, joinMsg: '', createMsg: '', profile: null, step: null, stepN: -1, manage: null, resetFor: null, confirmDelete: false, confirmLeague: null };
 const locked = () => !!STATE && serverNow() >= STATE.closesAt;
 const user = id => STATE.users.find(u => u.id === id);
 const uname = id => (user(id) || { name: '?' }).name;
@@ -387,6 +402,7 @@ const nDays = () => Math.max(STATE.n.monde, STATE.n.france);
 const dayState = k => ({ monde: Math.min(k, STATE.n.monde), france: Math.min(k, STATE.n.france) });
 
 function defaultSports() { const o = {}; ATHLETES.forEach(([n, s]) => { o[norm(n)] = s; }); return o; }
+const SLOTS = 15;   // 10 places du Top 10 + 5 de réserve
 const blank = () => ({ monde: Array(10).fill(''), france: Array(10).fill('') });
 function revealedCount(actual) { let k = 0; for (let r = 10; r >= 1; r--) { if (String(actual[r - 1] || '').trim()) k++; else break; } return k; }
 
@@ -395,7 +411,12 @@ function buildState(snap, meId, prevLg) {
   const users = snap.profiles.map(p => ({ id: p.id, name: p.pseudo, role: p.role === 'gamemaster' ? 'admin' : 'member' }));
   const byId = {}; users.forEach(u => { byId[u.id] = u; });
   const picks = {}; users.forEach(u => { picks[u.id] = blank(); });
-  snap.picks.forEach(r => { if (picks[r.user_id]) picks[r.user_id][r.classement][r.pos - 1] = r.name; });
+  /* slots : mes 15 tuiles par classement (10 du Top 10 + 5 de réserve), avec leur note perso. picks ne garde que le Top 10, seul compté. */
+  const slots = { monde: Array.from({ length: SLOTS }, () => ({ n: '', t: '' })), france: Array.from({ length: SLOTS }, () => ({ n: '', t: '' })) };
+  snap.picks.forEach(r => {
+    if (r.pos <= 10 && picks[r.user_id]) picks[r.user_id][r.classement][r.pos - 1] = r.name;
+    if (r.user_id === meId) slots[r.classement][r.pos - 1] = { n: r.name, t: r.note || '' };
+  });
   const validated = {}; snap.status.forEach(s => { validated[s.user_id] = !!s.validated; });
   const actual = blank(); snap.reveals.forEach(r => { actual[r.classement][r.rank - 1] = r.name; });
   const aliases = {}, distinct = {}, notAlias = {};
@@ -406,7 +427,7 @@ function buildState(snap, meId, prevLg) {
   const mine = leagues.filter(l => l.members.includes(meId));
   return {
     me: meId, season: snap.season.id, seasonLabel: snap.season.label, closesAt: Date.parse(snap.season.closes_at), firstReveal: snap.season.first_reveal || '2026-12-22',
-    users, picks, validated, actual, aliases, distinct, notAlias, sports, leagues,
+    users, picks, slots, validated, actual, aliases, distinct, notAlias, sports, leagues,
     n: { monde: revealedCount(actual.monde), france: revealedCount(actual.france) },
     lg: (prevLg && mine.some(l => l.id === prevLg)) ? prevLg : (mine[0] ? mine[0].id : null)
   };
@@ -667,8 +688,18 @@ function makeSupabaseApi(cfg) {
   if (/^eyJ/.test(cfg.SUPABASE_ANON_KEY)) headers.Authorization = 'Bearer ' + cfg.SUPABASE_ANON_KEY;
   const KEY = 'classement_eurosport_token';
   let token = null, uid = null;
+  /* Le jeton est gardé à deux endroits (stockage local + cookie d'un an) et le navigateur est invité à ne pas les purger :
+     la connexion survit ainsi aux fermetures de l'app et aux nettoyages automatiques. */
+  const readCookie = () => { try { const m = document.cookie.match(new RegExp('(?:^|; )' + KEY + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; } catch (_) { return null; } };
+  const writeCookie = t => { try { document.cookie = KEY + '=' + (t ? encodeURIComponent(t) : '') + '; path=/; max-age=' + (t ? 31536000 : 0) + '; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : ''); } catch (_) { /* ignore */ } };
   try { token = localStorage.getItem(KEY); } catch (_) { /* stockage indisponible */ }
-  const setToken = t => { token = t; try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY); } catch (_) { /* ignore */ } };
+  if (!token) token = readCookie();
+  const setToken = t => {
+    token = t; writeCookie(t);
+    try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY); } catch (_) { /* ignore */ }
+    try { if (t && navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (_) { /* ignore */ }
+  };
+  if (token) setToken(token);   // recopie le jeton aux deux endroits
   async function rpc(fn, args) {
     let res;
     try { res = await fetch(base + fn, { method: 'POST', headers, body: JSON.stringify(args || {}) }); }
@@ -690,7 +721,7 @@ function makeSupabaseApi(cfg) {
     async signOut() { const t = token; setToken(null); uid = null; if (t) { try { await rpc('logout', { p_token: t }); } catch (_) { /* ignore */ } } },
     serverInfo: () => rpc('server_info'),
     async snapshot() { const s = await rpc('snapshot', { p_token: token }); uid = s.me.id; return s; },
-    savePicks: (season, monde, france, validate) => rpc('save_picks', { p_token: token, p_season: season, p_monde: monde, p_france: france, p_validate: !!validate }),
+    savePicks: (season, data, validate) => rpc('save_picks', { p_token: token, p_season: season, p_data: data, p_validate: !!validate }),
     createLeague: (season, name) => rpc('create_league', { p_token: token, p_season: season, p_name: name }),
     joinLeague: code => rpc('join_league', { p_token: token, p_code: code }),
     leaveLeague: id => rpc('leave_league', { p_token: token, p_league: id }),
@@ -703,6 +734,7 @@ function makeSupabaseApi(cfg) {
     setRules: (season, rules) => rpc('gm_set_rules', { p_token: token, p_season: season, p_rules: rules }),
     setRole: (userId, role) => rpc('set_role', { p_token: token, p_user: userId, p_role: role }),
     resetPassword: (userId, code) => rpc('admin_reset_password', { p_token: token, p_user: userId, p_new: code }),
+    changePseudo: p => rpc('change_pseudo', { p_token: token, p_pseudo: p }),
     async changeCode(oldCode, newCode) { const r = await rpc('change_code', { p_token: token, p_old: oldCode, p_new: newCode }); if (!r.ok) throw new Error(r.error); },
     async deleteAccount() { await rpc('delete_my_account', { p_token: token }); setToken(null); uid = null; }
   };
@@ -770,10 +802,30 @@ let saveTimer = null;
 const saveText = () => ui.save ? [ui.save, ui.saveErr ? 'msg err' : 'msg ok'] : STATE.validated[STATE.me] ? ['Pronos validés ✓ Si tu modifies un nom, pense à valider à nouveau.', 'msg ok'] : ['Pronos pas encore validés.', 'note'];
 function paintSave() { const el = document.getElementById('saveMsg'); if (el) { const s = saveText(); el.className = s[1]; el.textContent = s[0]; } }
 function scheduleSave() { ui.dirty = true; STATE.validated[STATE.me] = false; ui.save = 'Modification en cours…'; ui.saveErr = false; paintSave(); clearTimeout(saveTimer); saveTimer = setTimeout(() => flushSave(false), 900); }
+const slotData = () => { const o = {}; CLS.forEach(([c]) => { o[c] = STATE.slots[c].map(x => ({ n: x.n, t: x.t })); }); return o; };
+const syncPicks = () => { CLS.forEach(([c]) => { STATE.picks[STATE.me][c] = STATE.slots[c].slice(0, 10).map(x => x.n); }); };
 async function flushSave(validate) {
-  clearTimeout(saveTimer); const P = STATE.picks[STATE.me];
-  try { await API.savePicks(STATE.season, P.monde, P.france, validate); ui.dirty = false; ui.save = validate ? '' : 'Brouillon enregistré ✓'; ui.saveErr = false; STATE.validated[STATE.me] = !!validate; paintSave(); return true; }
+  clearTimeout(saveTimer);
+  try { await API.savePicks(STATE.season, slotData(), validate); ui.dirty = false; ui.save = validate ? '' : 'Brouillon enregistré ✓'; ui.saveErr = false; STATE.validated[STATE.me] = !!validate; paintSave(); return true; }
   catch (e) { ui.dirty = false; ui.save = /closed/.test(String(e.message)) ? 'Les pronos sont clos : ils ne sont plus modifiables.' : /duplicate/.test(String(e.message)) ? 'Pas enregistré : un athlète est saisi deux fois.' : errMsg(e); ui.saveErr = true; paintSave(); if (/closed/.test(String(e.message))) refresh().catch(() => {}); return false; }
+}
+/* Tuiles : chaque athlète est une tuile qu'on déplace (glisser par la poignée, ou boutons ▲ ▼). Emplacements 1 à 10 = Top 10, R1 à R5 = réserve. */
+const tileHtml = (c, label, i) => {
+  const t = STATE.slots[c][i], filled = !!t.n.trim(), dup = dupSet(STATE.slots[c].map(x => x.n)).has(i), reserve = i >= 10;
+  return `<div class="pt${filled ? ' filled' : ''}${reserve ? ' reserve' : ''}" id="tile-${c}-${i}">
+    <div class="pt1"><button type="button" class="grip" data-grip="${c}:${i}" aria-label="Déplacer ${label} place ${i + 1}" title="Glisser pour déplacer">⠿</button><span class="num">${reserve ? 'R' + (i - 9) : i + 1}</span><span class="sp" id="sp-${c}-${i}"></span>
+      <input id="in-${c}-${i}" data-c="${c}" data-i="${i}" list="athletes" value="${esc(t.n)}" class="${dup ? 'dup' : ''}" autocomplete="off" aria-label="${label} ${reserve ? 'réserve ' + (i - 9) : 'place ' + (i + 1)}" placeholder="${reserve ? 'Réserve' : 'Athlète'}" maxlength="80">
+      <span class="mv"><button type="button" data-mv="${c}:${i}:-1" aria-label="Monter"${i === 0 ? ' disabled' : ''}>▲</button><button type="button" data-mv="${c}:${i}:1" aria-label="Descendre"${i === SLOTS - 1 ? ' disabled' : ''}>▼</button></span></div>
+    <div class="pt2"><select id="ps-${c}-${i}" data-psport="${c}:${i}" aria-label="Sport de l'athlète ${label} ${i + 1}"${filled ? '' : ' disabled'}>${sportOpts(sportOf(t.n))}</select>
+      <input id="nt-${c}-${i}" data-note="${c}:${i}" value="${esc(t.t)}" maxlength="200" autocomplete="off" placeholder="Note perso (privée)" aria-label="Note personnelle ${label} ${i + 1}"></div></div>`;
+};
+const tilesHtml = (c, label) => Array.from({ length: SLOTS }, (_, i) => (i === 10 ? '<div class="pt-sep">Réserve : hors Top 10, non comptée</div>' : '') + tileHtml(c, label, i)).join('');
+function repaintTiles(c) { const el = document.getElementById('tiles-' + c); if (!el) return; el.innerHTML = tilesHtml(c, CLS.find(x => x[0] === c)[1]); paintSports(); }
+function moveSlot(c, from, to, focusMv) {
+  if (to < 0 || to >= SLOTS || to === from) return;
+  const arr = STATE.slots[c], [x] = arr.splice(from, 1); arr.splice(to, 0, x);
+  syncPicks(); repaintTiles(c); scheduleSave();
+  if (focusMv) { const b = document.querySelector(`[data-mv="${c}:${to}:${focusMv}"]`); if (b && !b.disabled) b.focus(); }
 }
 function vPronos() {
   const me = STATE.me;
@@ -781,12 +833,9 @@ function vPronos() {
     const L = leagueFor(me), d = compute(STATE, STATE.n, L);
     return `<div><h2>Mes pronos</h2><p class="sub">Les pronos sont verrouillés depuis la clôture (${closesLabel()}). Voici tes choix et les points obtenus dans « ${esc(L.name)} ».</p></div>${leagueChips()}${tableFor('monde', 'Monde', me, d)}${tableFor('france', 'France', me, d)}`;
   }
-  const col = ([c, label]) => {
-    const dups = dupSet(STATE.picks[me][c]);
-    return `<section class="card"><h3>${label}</h3>` + STATE.picks[me][c].map((v, i) => `<div class="slot gm"><span class="num">${i + 1}</span><span class="sp" id="sp-${c}-${i}"></span><input id="in-${c}-${i}" data-c="${c}" data-i="${i}" list="athletes" value="${esc(v)}" class="${dups.has(i) ? 'dup' : ''}" autocomplete="off" aria-label="${label} place ${i + 1}" placeholder="Athlète" maxlength="80"><select id="ps-${c}-${i}" data-psport="${c}:${i}" aria-label="Sport de l'athlète ${label} ${i + 1}"${v.trim() ? '' : ' disabled'}>${sportOpts(sportOf(v))}</select></div>`).join('') + '</section>';
-  };
+  const col = ([c, label]) => `<section class="card"><h3>${label}</h3><div id="tiles-${c}">${tilesHtml(c, label)}</div></section>`;
   const s = saveText();
-  return `<div><h2>Mes pronos</h2><p class="sub">Compose ton Top 10 Monde et ton Top 10 France. Tout s'enregistre au fur et à mesure. Tu peux saisir n'importe quel athlète : les noms proposés ne sont que des suggestions. Choisis son sport pour afficher son pictogramme. Le gamemaster harmonise les orthographes différentes.</p></div>
+  return `<div><h2>Mes pronos</h2><p class="sub">Compose ton Top 10 Monde et ton Top 10 France. Tout s'enregistre au fur et à mesure. Déplace les tuiles avec la poignée ⠿ ou les boutons ▲ ▼. Les cinq emplacements de réserve te servent de brouillon : seuls les dix premiers comptent. Tu peux noter pour toi-même ce que l'athlète a fait cette année : cette note reste privée. Les noms proposés ne sont que des suggestions, le gamemaster harmonise les orthographes différentes.</p></div>
     <section class="card cdcard"><h3>Clôture des pronos dans</h3>${cdHtml()}<p style="margin-top:10px">Modifiables jusqu'au ${closesLabel()}</p></section>
     <button class="btn gold block" data-act="save">Valider mes pronos</button><div class="${s[1]}" id="saveMsg">${esc(s[0])}</div>${col(CLS[0])}${col(CLS[1])}`;
 }
@@ -828,7 +877,7 @@ function vProfil() {
   if (isAdmin(me)) { const nc = pendingCount();
     h += `<section class="card stack"><h3>Espace gamemaster</h3><p class="sub" style="margin:0">Tu publies les athlètes d'Eurosport, tu harmonises les noms et tu gères les gamemasters.${nc ? ` <b class="neg">${nc} point${nc > 1 ? 's' : ''} à traiter.</b>` : ''}</p><button class="btn gold" data-go="gm">Ouvrir l'espace gamemaster</button></section>`; }
   h += installCard();
-  h += `<section class="card stack"><h3>Mon compte</h3>${ui.codeOpen ? `<div class="stack"><label class="lab" for="cc-old">Code actuel</label><input class="field" id="cc-old" type="password" autocomplete="current-password"><label class="lab" for="cc-new">Nouveau code (6 caractères minimum)</label><input class="field" id="cc-new" type="password" autocomplete="new-password"><label class="lab" for="cc-new2">Confirme le nouveau code</label><input class="field" id="cc-new2" type="password" autocomplete="new-password"><div class="rowflex"><button class="btn small" data-act="chcode">Enregistrer</button><button class="btn ghost small" data-act="codeopen">Annuler</button></div></div>` : '<div><button class="btn ghost small" data-act="codeopen">Changer mon code</button></div>'}${ui.confirmDelete ? '<p class="neg" style="margin:0">Supprimer définitivement ton compte, tes pronos et tes ligues créées sans autre membre ?</p><div class="rowflex"><button class="btn small" style="background:var(--red);border-color:var(--red)" data-act="delacct">Oui, supprimer mon compte</button><button class="btn ghost small" data-act="delacct-cancel">Annuler</button></div>' : '<div class="rowflex"><button class="btn ghost small" data-act="logout">Se déconnecter</button><button class="btn ghost small" data-act="delacct-ask">Supprimer mon compte</button></div>'}</section>${legalNote()}`;
+  h += `<section class="card stack"><h3>Mon compte</h3>${ui.pseudoOpen ? `<div class="stack"><label class="lab" for="ps-new">Nouveau pseudo</label><input class="field" id="ps-new" maxlength="24" autocomplete="off" autocapitalize="off" value="${esc(u.name)}"><p class="note" style="margin:0">Tes pronos et tes ligues sont conservés. Les autres joueurs verront le nouveau pseudo.</p><div class="rowflex"><button class="btn small" data-act="chpseudo">Enregistrer</button><button class="btn ghost small" data-act="pseudoopen">Annuler</button></div></div>` : '<div><button class="btn ghost small" data-act="pseudoopen">Changer mon pseudo</button></div>'}${ui.codeOpen ? `<div class="stack"><label class="lab" for="cc-old">Code actuel</label><input class="field" id="cc-old" type="password" autocomplete="current-password"><label class="lab" for="cc-new">Nouveau code (6 caractères minimum)</label><input class="field" id="cc-new" type="password" autocomplete="new-password"><label class="lab" for="cc-new2">Confirme le nouveau code</label><input class="field" id="cc-new2" type="password" autocomplete="new-password"><div class="rowflex"><button class="btn small" data-act="chcode">Enregistrer</button><button class="btn ghost small" data-act="codeopen">Annuler</button></div></div>` : '<div><button class="btn ghost small" data-act="codeopen">Changer mon code</button></div>'}${ui.confirmDelete ? '<p class="neg" style="margin:0">Supprimer définitivement ton compte, tes pronos et tes ligues créées sans autre membre ?</p><div class="rowflex"><button class="btn small" style="background:var(--red);border-color:var(--red)" data-act="delacct">Oui, supprimer mon compte</button><button class="btn ghost small" data-act="delacct-cancel">Annuler</button></div>' : '<div class="rowflex"><button class="btn ghost small" data-act="logout">Se déconnecter</button><button class="btn ghost small" data-act="delacct-ask">Supprimer mon compte</button></div>'}</section>${legalNote()}`;
   return h;
 }
 
@@ -912,6 +961,13 @@ document.addEventListener('click', async e => {
   }
   else if (D.act === 'logout') { await logout(); }
   else if (D.act === 'back') { ui.profile = null; ui.view = 'classement'; render(); }
+  else if (D.act === 'pseudoopen') { ui.pseudoOpen = !ui.pseudoOpen; render(); }
+  else if (D.act === 'chpseudo') {
+    const n = val('ps-new').replace(/\s+/g, ' ').trim();
+    if (n === user(STATE.me).name) { ui.pseudoOpen = false; render(); return; }
+    if (!pseudoOk(n)) { toast('Pseudo : 2 à 24 caractères (lettres, chiffres, espace, . _ - \').'); return; }
+    try { await API.changePseudo(n); ui.pseudoOpen = false; await refresh(); toast('Pseudo modifié'); } catch (err) { toast(errMsg(err)); }
+  }
   else if (D.act === 'codeopen') { ui.codeOpen = !ui.codeOpen; render(); }
   else if (D.act === 'chcode') {
     const o = val('cc-old'), n1 = val('cc-new'), n2 = val('cc-new2');
@@ -943,11 +999,11 @@ document.addEventListener('click', async e => {
   else if (D.act === 'delacct') { try { await API.deleteAccount(); STATE = null; ui.confirmDelete = false; ui.auth = null; render(); toast('Compte supprimé'); } catch (err) { ui.confirmDelete = false; toast(errMsg(err)); render(); } }
   else if (D.act === 'save') {
     const me = STATE.me, P = STATE.picks[me];
-    const bad = CLS.some(([c]) => P[c].some(x => !x.trim()) || dupSet(P[c]).size);
+    const dupN = c => dupSet(STATE.slots[c].map(x => x.n)).size;
+    const bad = CLS.some(([c]) => P[c].some(x => !x.trim()) || dupN(c));
     if (bad) {
-      const msg = 'À compléter avant validation : ' + CLS.map(([c, l]) => `${l} ${P[c].filter(x => x.trim()).length}/10${dupSet(P[c]).size ? ' (doublon)' : ''}`).join(' · ') + '.';
-      try { await API.savePicks(STATE.season, P.monde, P.france, false); ui.dirty = false; } catch (_) { /* brouillon non enregistré : message ci-dessous */ }
-      ui.save = msg; ui.saveErr = true; paintSave(); return;
+      const msg = 'À compléter avant validation : ' + CLS.map(([c, l]) => `${l} ${P[c].filter(x => x.trim()).length}/10${dupN(c) ? ' (doublon)' : ''}`).join(' · ') + '.';
+      await flushSave(false); ui.save = msg; ui.saveErr = true; paintSave(); return;
     }
     ui.save = 'Validation…'; ui.saveErr = false; paintSave();
     if (await flushSave(true)) { ui.save = 'Pronos validés : Monde 10/10 · France 10/10.'; ui.saveErr = false; await refresh(); }
@@ -973,16 +1029,50 @@ document.addEventListener('click', async e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.c && STATE) {
-    const arr = STATE.picks[STATE.me][t.dataset.c]; arr[+t.dataset.i] = t.value;
-    const d = dupSet(arr); arr.forEach((_, i) => { const el = document.getElementById('in-' + t.dataset.c + '-' + i); if (el) el.classList.toggle('dup', d.has(i)); });
+    const c = t.dataset.c, i = +t.dataset.i; STATE.slots[c][i].n = t.value; syncPicks();
+    const tile = document.getElementById(`tile-${c}-${i}`); if (tile) tile.classList.toggle('filled', !!t.value.trim());
+    const d = dupSet(STATE.slots[c].map(x => x.n)); STATE.slots[c].forEach((_, k) => { const el = document.getElementById('in-' + c + '-' + k); if (el) el.classList.toggle('dup', d.has(k)); });
     paintSports(); scheduleSave();
+  } else if (t.dataset.note && STATE) {
+    const [c, i] = t.dataset.note.split(':'); STATE.slots[c][+i].t = t.value; scheduleSave();
   }
 });
+/* Boutons ▲ ▼ et glisser-déposer par la poignée */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-mv]'); if (!b || !STATE || locked()) return;
+  const [c, i, d] = b.dataset.mv.split(':'); moveSlot(c, +i, +i + +d, +d);
+});
+let drag = null, dragRaf = 0;
+function dragTarget(y) { const tiles = [...document.querySelectorAll(`#tiles-${drag.c} .pt`)]; let best = drag.i, bd = 1e9; tiles.forEach((el, k) => { const r = el.getBoundingClientRect(), d = Math.abs(y - (r.top + r.height / 2)); if (d < bd) { bd = d; best = k; } }); return best; }
+function dragPaint() {
+  if (!drag) return; const dy = drag.y - drag.y0 + (window.scrollY - drag.s0);
+  drag.tile.style.transform = `translateY(${dy}px)`; const to = dragTarget(drag.y);
+  if (to !== drag.to) { document.querySelectorAll(`#tiles-${drag.c} .pt`).forEach((el, k) => el.classList.toggle('drop', k === to && k !== drag.i)); drag.to = to; }
+  const vh = window.innerHeight; if (drag.y < 90) window.scrollBy(0, -14); else if (drag.y > vh - 90) window.scrollBy(0, 14);
+  dragRaf = requestAnimationFrame(dragPaint);
+}
+document.addEventListener('pointerdown', e => {
+  const g = e.target.closest('[data-grip]'); if (!g || !STATE || locked() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault(); const [c, i] = g.dataset.grip.split(':'), tile = document.getElementById(`tile-${c}-${i}`); if (!tile) return;
+  document.activeElement && document.activeElement.blur && document.activeElement.blur();
+  drag = { c, i: +i, to: +i, tile, y0: e.clientY, y: e.clientY, s0: window.scrollY, pid: e.pointerId, g };
+  try { g.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+  tile.classList.add('dragging'); dragRaf = requestAnimationFrame(dragPaint);
+});
+document.addEventListener('pointermove', e => { if (drag && e.pointerId === drag.pid) { drag.y = e.clientY; e.preventDefault(); } }, { passive: false });
+const endDrag = e => {
+  if (!drag || (e && e.pointerId !== drag.pid)) return; cancelAnimationFrame(dragRaf);
+  if (e && typeof e.clientY === 'number' && e.type === 'pointerup') drag.y = e.clientY;
+  const to = dragTarget(drag.y), { c, i, tile } = drag; drag = null; tile.classList.remove('dragging'); tile.style.transform = '';
+  document.querySelectorAll('.pt.drop').forEach(el => el.classList.remove('drop'));
+  if (e && e.type === 'pointerup' && to !== i) moveSlot(c, i, to);
+};
+document.addEventListener('pointerup', endDrag); document.addEventListener('pointercancel', endDrag);
 document.addEventListener('change', async e => {
   const t = e.target; if (!STATE) return;
   if (t.dataset.reveal) { const [c, i] = t.dataset.reveal.split(':'); await act(() => API.setReveal(STATE.season, c, +i + 1, t.value.trim()), t.value.trim() ? 'Publié' : 'Retiré'); }
   else if (t.dataset.sport) { const [c, i] = t.dataset.sport.split(':'), name = STATE.actual[c][+i]; if (name) await act(() => API.setSport(cn(name), t.value), 'Sport enregistré'); }
-  else if (t.dataset.psport) { const [c, i] = t.dataset.psport.split(':'), name = STATE.picks[STATE.me][c][+i]; if (name.trim()) { STATE.sports[cn(name)] = t.value; paintSports(); try { await API.setSport(cn(name), t.value); } catch (err) { console.error(err); } } }
+  else if (t.dataset.psport) { const [c, i] = t.dataset.psport.split(':'), name = STATE.slots[c][+i].n; if (name.trim()) { STATE.sports[cn(name)] = t.value; paintSports(); try { await API.setSport(cn(name), t.value); } catch (err) { console.error(err); } } }
 });
 setInterval(() => { if (!STATE) return; const P = cdParts(); document.querySelectorAll('[data-cd]').forEach(el => { el.textContent = p2(P[+el.dataset.cd]); }); }, 1000);
 setInterval(() => { if (STATE && !document.hidden && !editing() && !ui.dirty) refresh().catch(() => {}); }, 60000);
