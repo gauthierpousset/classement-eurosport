@@ -693,9 +693,8 @@ function conflicts() {
   }
   return out;
 }
-/* Rapprochements à valider AVANT de publier un athlète : pronos des joueurs dont le nom ressemble au nom saisi par le gamemaster (nom de famille seul, accents, fautes). */
+/* Rapprochements à valider AVANT de publier un athlète (avant la clôture, seuls les pronos visibles du gamemaster sont comparés) : pronos des joueurs dont le nom ressemble au nom saisi par le gamemaster (nom de famille seul, accents, fautes). */
 function pubMatches(c, name, rank) {
-  if (!locked()) return [];   /* les pronos des autres restent cachés avant la clôture */
   const A = String(name || '').trim(); if (!A) return [];
   const a = cn(A), an = norm(A), byName = {}, others = new Set(), out = [];
   STATE.actual[c].forEach((x, k) => { if (x && k + 1 !== rank) others.add(cn(x)); });
@@ -1024,8 +1023,9 @@ function vGm() {
       <div class="rowflex"><button class="btn small" data-act="merge" data-ci="${i}">Valider le rapprochement</button><button class="btn ghost small" data-act="split" data-ci="${i}">Athlètes différents</button></div>
       <p class="note" style="margin:0">Cette orthographe remplacera toutes les variantes dans tous les pronos.</p></section>`).join('')
     : '<section class="card"><p class="note" style="margin:0">Aucun nom à rapprocher.</p></section>';
-  const conf = cf.length ? cf.map(x => `<section class="card conf stack"><div><b>${x.label} · ${rl(x.rank)}</b></div><p style="margin:0">Eurosport a publié <b>${sp(x.actual)}${esc(x.actual)}</b>. ${x.users.length > 1 ? 'Des joueurs ont' : 'Un joueur a'} écrit <b>« ${esc(x.pick)} »</b> (${x.users.map(esc).join(', ')}). Est-ce le même athlète ?</p>
-    <div class="rowflex"><button class="btn small" data-act="same" data-key="${esc(x.key)}">Oui, c'est le même</button><button class="btn ghost small" data-act="diff" data-key="${esc(x.key)}">Non, deux athlètes</button></div></section>`).join('') : '<section class="card"><p class="note" style="margin:0">Aucun conflit avec les noms publiés pour l\'instant.</p></section>';
+  const conf = cf.length ? cf.map((x, i) => `<section class="card conf stack"><div><b>${x.label} · ${rl(x.rank)}</b></div><p style="margin:0">Eurosport a publié <b>${sp(x.actual)}${esc(x.actual)}</b>. ${x.users.length > 1 ? 'Des joueurs ont' : 'Un joueur a'} écrit <b>« ${esc(x.pick)} »</b> (${x.users.map(esc).join(', ')}). Est-ce le même athlète ?</p>
+    <div><label class="lab" for="cs-${i}">Orthographe retenue</label><input class="field" id="cs-${i}" list="athletes" value="${esc(toks(x.pick).length > toks(x.actual).length ? x.pick : x.actual)}" autocomplete="off"><p class="note" style="margin:4px 0 0">Elle remplace les deux écritures partout : pronos et athlète publié.</p></div>
+    <div class="rowflex"><button class="btn small" data-act="same" data-key="${esc(x.key)}" data-ci="${i}">Oui, c'est le même</button><button class="btn ghost small" data-act="diff" data-key="${esc(x.key)}">Non, deux athlètes</button></div></section>`).join('') : '<section class="card"><p class="note" style="margin:0">Aucun conflit avec les noms publiés pour l\'instant.</p></section>';
   const opts = cur => Object.entries(SPORTS).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${v[0]} ${v[1]}</option>`).join('');
   const col = ([c, label]) => `<section class="card"><h3>${label}</h3>` + STATE.actual[c].map((v, i) => {
     const r = i + 1, shown = String(v).trim() !== '', key = c + ':' + i, draft = ui.draft[key] !== undefined ? ui.draft[key] : v;
@@ -1160,7 +1160,7 @@ document.addEventListener('click', async e => {
     [c.keys, rawKeys].forEach(ks => { for (let i = 0; i < ks.length; i++) for (let j = i + 1; j < ks.length; j++) rules.push({ kind: 'notalias', k: 'pp|' + [ks[i], ks[j]].sort().join('|'), v: '' }); });
     await act(() => API.setRules(STATE.season, rules), 'Noté : athlètes différents');
   }
-  else if (D.act === 'same') { const x = conflicts().find(c => c.key === D.key); if (x) await act(() => API.applySpelling(STATE.season, [x.pick, x.actual], x.actual, applyNames([x.pick, x.actual], x.actual, [x.pn, x.a])), 'Corrigé partout : ' + x.actual); }
+  else if (D.act === 'same') { const x = conflicts().find(c => c.key === D.key), sp2 = val('cs-' + D.ci).trim(); if (x && sp2) await act(() => API.applySpelling(STATE.season, [x.pick, x.actual, sp2], sp2, applyNames([x.pick, x.actual], sp2, [x.pn, x.a])), 'Corrigé partout : ' + sp2); }
   else if (D.act === 'diff') { await act(() => API.setRules(STATE.season, [{ kind: 'notalias', k: D.key, v: '' }]), 'Noté : deux athlètes différents'); }
   else if (D.act === 'pubreq') {
     const key = D.slot, [c, i] = key.split(':'), name = String(ui.draft[key] || '').trim();
