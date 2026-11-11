@@ -1,0 +1,19 @@
+name: Envoyer les notifications
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Appeler la fonction d'envoi
+        run: |
+          URL=$(grep -oP "SUPABASE_URL:\s*'\K[^']+" docs/config.js)
+          KEY=$(grep -oP "SUPABASE_ANON_KEY:\s*'\K[^']+" docs/config.js)
+          VAPID=$(grep -oP "VAPID_PUBLIC_KEY:\s*'\K[^']+" docs/config.js || true)
+          if [ -z "$VAPID" ]; then echo "Notifications pas encore configurées : rien à faire."; exit 0; fi
+          AUTH=()
+          case "$KEY" in eyJ*) AUTH=(-H "Authorization: Bearer $KEY");; esac
+          curl -sS -X POST "$URL/functions/v1/notify" -H "apikey: $KEY" "${AUTH[@]}" -H "Content-Type: application/json" -d '{}' -w '\n'
