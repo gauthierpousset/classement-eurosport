@@ -211,6 +211,7 @@ details.tbl{margin-top:10px} details.tbl summary{cursor:pointer;color:var(--gold
 .ex{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-top:6px}
 .toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:99px;font-weight:600;font-size:.9rem;z-index:9}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .4s ease}}
+.push{background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:.92rem}.push .pt1{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.push .pt1 span{color:var(--muted);font-size:.78rem}
 
 header.top{padding-top:calc(10px + env(safe-area-inset-top))}
 .legal{margin-top:6px;text-align:center}
@@ -250,7 +251,7 @@ const ATHLETES = [
 
 /* ---------- Moteur de scoring ---------- */
 const W = r => 19 - r;                               // poids d'un athlète selon son rang réel : 18 pour le 1er, 9 pour le 10e (le 1er vaut 2 fois le 10e)
-const SNIPER = 40;                                   // maximum du Sniper : autant qu'un classement parfait à cote ×1 (4 pts × 10 athlètes)
+const SNIPER = 40;                                   // maximum du Pifomètre : autant qu'un classement parfait à cote ×1 (4 pts × 10 athlètes)
 const SMAX = 270;                                    // poids total des deux Top 10 (135 par classement)
 const PREC = d => 1 - 0.1 * d;                       // justesse : -10 % par rang d'écart
 const pts = d => d === 0 ? 4 : d === 1 ? 3 : 2;      // score de placement
@@ -340,7 +341,7 @@ function compute(st, nn, lg) {
   return { res, N, k: kAll };
 }
 
-const MET = [['total', 'Total'], ['monde', 'Monde'], ['france', 'France'], ['sniper', 'Sniper']];
+const MET = [['total', 'Total'], ['monde', 'Monde'], ['france', 'France'], ['sniper', 'Pifomètre']];
 const mval = (r, m) => m === 'sniper' ? r.sniper.acq : r[m];
 function ranking(st, nn, lg, m = 'total') {
   const sorter = r => (a, b) => mval(r[b], m) - mval(r[a], m) || lg.members.indexOf(a) - lg.members.indexOf(b);
@@ -385,7 +386,7 @@ let API = null, STATE = null;
 const clock = { offset: 0 };
 const serverNow = () => Date.now() + clock.offset;
 const ui = { save: '', saveErr: false, dirty: false, metric: 'total', view: 'classement', auth: null, msg: '', msgErr: false,
-  joinOpen: false, createOpen: false, codeOpen: false, pseudoOpen: false, joinMsg: '', createMsg: '', profile: null, step: null, stepN: -1, manage: null, resetFor: null, confirmDelete: false, confirmLeague: null };
+  joinOpen: false, createOpen: false, codeOpen: false, pseudoOpen: false, pushState: 'off', joinMsg: '', createMsg: '', profile: null, step: null, stepN: -1, manage: null, resetFor: null, confirmDelete: false, confirmLeague: null };
 const locked = () => !!STATE && serverNow() >= STATE.closesAt;
 const user = id => STATE.users.find(u => u.id === id);
 const uname = id => (user(id) || { name: '?' }).name;
@@ -446,7 +447,7 @@ const ERR = {
   forbidden: 'Action non autorisée.', unknown_code: 'Code de ligue inconnu.', already_member: 'Tu es déjà dans cette ligue.',
   not_closed: 'Disponible après la clôture des pronos.', last_gamemaster: 'Il doit rester au moins un gamemaster.', weak_password: 'Le code doit faire 6 caractères au minimum.',
   bad_credentials: 'Pseudo ou code incorrect.', pseudo_taken: 'Ce pseudo est déjà pris.', bad_pseudo: 'Pseudo invalide (2 à 24 caractères).',
-  busy: 'Beaucoup d\'inscriptions en ce moment : réessaie dans une heure.', bad_name: 'Nom trop court.', owner_cannot_be_removed: 'Le créateur ne peut pas être retiré.', unknown_user: 'Joueur introuvable.', not_authenticated: 'Reconnecte-toi.'
+  busy: 'Beaucoup d\'inscriptions en ce moment : réessaie dans une heure.', bad_name: 'Nom trop court.', name_taken: 'Ce nom de ligue est déjà pris.', bad_subscription: 'Abonnement invalide.', owner_cannot_be_removed: 'Le créateur ne peut pas être retiré.', unknown_user: 'Joueur introuvable.', not_authenticated: 'Reconnecte-toi.'
 };
 function errMsg(e) {
   const m = String((e && e.message) || e || '');
@@ -469,6 +470,35 @@ const closesLabel = () => { const d = new Date(STATE.closesAt), o = { timeZone: 
   return d.toLocaleDateString('fr-FR', { ...o, day: 'numeric', month: 'long', year: 'numeric' }) + ' à ' + d.toLocaleTimeString('fr-FR', { ...o, hour: '2-digit', minute: '2-digit' }).replace(':', ' h '); };
 const dateOf = r => { const d = new Date(STATE.firstReveal + 'T12:00:00'); d.setDate(d.getDate() + (10 - r)); return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); };
 function cdParts() { let s = Math.max(0, Math.floor((STATE.closesAt - serverNow()) / 1000)); const d = Math.floor(s / 86400); s %= 86400; const h = Math.floor(s / 3600); s %= 3600; return [d, h, Math.floor(s / 60), s % 60]; }
+
+/* ---------- Export des pronos en CSV (s'ouvre directement dans Excel) ---------- */
+const csvCell = x => { const s = String(x == null ? '' : x); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+const csvText = rows => '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
+const fileSlug = s => String(s || 'joueur').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'joueur';
+function downloadText(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })), a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+/* Ma copie : mes 10 athlètes par classement, ma réserve et mes notes (privées, jamais partagées) */
+function ownPicksRows() {
+  const me = STATE.me, rows = [['Classement', 'Place', 'Athlète', 'Note perso']];
+  CLS.forEach(([c, label]) => {
+    const S = STATE.slots && STATE.slots[c] ? STATE.slots[c] : STATE.picks[me][c].map(n => ({ n, t: '' }));
+    S.forEach((x, i) => { if (x.n || x.t) rows.push([label, i < 10 ? i + 1 : 'Réserve', x.n, x.t]); });
+  });
+  return rows;
+}
+/* Tous les joueurs (gamemaster, après la clôture) : un athlète par ligne, avec les ligues du joueur */
+function allPicksRows() {
+  const rows = [['Joueur', 'Ligues', 'Classement', 'Place', 'Athlète']];
+  STATE.users.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).forEach(u => {
+    const lg = leaguesOf(u.id).map(l => l.name).join(' / ');
+    CLS.forEach(([c, label]) => (STATE.picks[u.id] ? STATE.picks[u.id][c] : []).forEach((n, i) => { if (n) rows.push([u.name, lg, label, i + 1, n]); }));
+  });
+  return rows;
+}
+const exportOwn = () => { downloadText('pronos_' + fileSlug(user(STATE.me).name) + '.csv', csvText(ownPicksRows())); toast('Fichier téléchargé'); };
+const exportAll = () => { downloadText('pronos_tous_les_joueurs.csv', csvText(allPicksRows())); toast('Fichier téléchargé'); };
 
 /* --- tableau des pronos avec résultats --- */
 function tableFor(c, label, p, d) {
@@ -531,9 +561,9 @@ function sniperCard(j, own = true) {
   const pct = x => Math.round(x) + ' %';
   const row = (l, o) => `<tr><th>${l}</th><td>${pct(o.now)}</td><td>${pct(o.max)}</td></tr>`;
   const met = (v, l) => `<div class="tile"><b class="num">${v}<small> / ${s.revealed}</small></b><span>${l}</span></div>`;
-  return `<section class="card"><h3>Sniper</h3><p class="sub">Mesure ${own ? 'ta' : 'sa'} couverture et ${own ? 'ta' : 'sa'} précision, Monde et France réunis. Maximum : ${SNIPER} pts.</p>
+  return `<section class="card"><h3>Pifomètre</h3><p class="sub">Mesure ${own ? 'ta' : 'sa'} couverture et ${own ? 'ta' : 'sa'} précision, Monde et France réunis. Maximum : ${SNIPER} pts.</p>
   <div class="tiles"><div class="tile hl"><span>Acquis</span><b class="num">${f1(j.acq)}</b></div><div class="tile"><span>À gagner</span><b class="num">${f1(j.pot)}</b></div><div class="tile"><span>Perdu</span><b class="num">${f1(j.lost)}</b></div></div>
-  <div class="bar" role="img" aria-label="Sniper : points acquis, à gagner et perdus"><i class="pot" style="width:${pc(j.acq + j.pot)}%"></i><i class="acq" style="width:${pc(j.acq)}%"></i></div>
+  <div class="bar" role="img" aria-label="Pifomètre : points acquis, à gagner et perdus"><i class="pot" style="width:${pc(j.acq + j.pot)}%"></i><i class="acq" style="width:${pc(j.acq)}%"></i></div>
   <div class="legend"><span><b>Acquis</b> : points obtenus sur les athlètes déjà dévoilés.</span><span><b>À gagner</b> : points encore atteignables avec les athlètes de ${ton} Top 10 pas encore dévoilés.</span><span><b>Perdu</b> : points définitivement hors d'atteinte.</span></div>
   <table class="sn"><thead><tr><th></th><th>Actuelle</th><th>Maximum possible</th></tr></thead><tbody>${row('Couverture', j.couv)}${row('Précision', j.prec)}</tbody></table>
   <h4 class="sn-h">Détail</h4>
@@ -611,7 +641,7 @@ function vClassement() {
     const r = R[p], big = mval(r, m), sel = k => m === k ? ' class="sel"' : '';
     return `<li class="row${i === 0 && big > 0 ? ' lead' : ''}${p === STATE.me ? ' me' : ''}"><div class="rk">${i + 1}</div><div class="who"><button class="name" data-user="${esc(p)}">${esc(uname(p))}</button>${mv}</div>
       <div class="tot num"><b>${f1(big)}</b><small>pts</small>${m !== 'total' ? `<span class="tt">Total ${f1(r.total)}</span>` : ''}</div><dl class="parts num">
-      <div${sel('monde')}><dt>Monde</dt><dd>${cell(r.monde)}</dd></div><div${sel('france')}><dt>France</dt><dd>${cell(r.france)}</dd></div><div${sel('sniper')}><dt>Sniper</dt><dd>${cell(r.sniper.acq)}</dd></div><div><dt>Champion</dt><dd>${cell(r.champion, true)}</dd></div><div><dt>Looser</dt><dd>${cell(r.looser)}</dd></div></dl></li>`;
+      <div${sel('monde')}><dt>Monde</dt><dd>${cell(r.monde)}</dd></div><div${sel('france')}><dt>France</dt><dd>${cell(r.france)}</dd></div><div${sel('sniper')}><dt>Pifomètre</dt><dd>${cell(r.sniper.acq)}</dd></div><div><dt>Champion</dt><dd>${cell(r.champion, true)}</dd></div><div><dt>Looser</dt><dd>${cell(r.looser)}</dd></div></dl></li>`;
   }).join('');
   const filters = `<div class="pills" role="group" aria-label="Classer par">${MET.map(([k, l]) => `<button class="pill" data-metric="${k}" aria-pressed="${m === k}">${l}</button>`).join('')}</div>`;
   return `<div><h2>Classement</h2><p class="sub">Ligue « ${esc(L.name)} » · ${L.members.length} joueur${L.members.length > 1 ? 's' : ''}. Clique sur un joueur pour voir son profil.</p></div>${leagueChips()}${filters}${nDays() === 0 ? `<p class="note">Les points démarrent à la première révélation d'Eurosport (vers le ${dateOf(10)}).</p>` : ''}<ol class="board">${items}</ol>${chartCard(L, m)}
@@ -621,13 +651,13 @@ function vClassement() {
 
 /* --- règles --- */
 function vRegles() {
-  const ex4 = [1, 2, 3, 4].map(k => `<li><span>${k} joueur${k > 1 ? 's' : ''} sur 4</span><b>×${f1(cote(k, 4))}</b></li>`).join('');
+  const ex4 = [1, 2, 3, 4].map(k => `<li><span>${k}/4 des joueurs</span><b>×${f1(cote(k, 4))}</b></li>`).join('');
   const R = (k, t) => `<div class="rule"><div class="k">${k}</div><div>${t}</div></div>`;
   return `<div><h2>Règles</h2><p class="sub">Pronostique le Top 10 Eurosport des athlètes de l'année, en Monde et en France. Ton score se compose de quatre éléments.</p></div>
   <section class="card stack" style="gap:18px">
   ${R('Monde et France', 'Pour chaque classement, tu établis ton Top 10. Chaque athlète de ton Top 10 qui figure aussi dans celui d\'Eurosport rapporte un <b>score de placement</b> : <b>4</b> à la bonne place, <b>3</b> à un rang d\'écart, <b>2</b> ailleurs dans le Top 10. Ce score est multiplié par la <b>cote</b> de l\'athlète.')}
   ${R('La cote', `La cote récompense le flair et l'exclusivité. Elle vaut <b>×2</b> si tu es le seul joueur de la ligue à avoir mis l'athlète dans ton classement, <b>×1</b> si tous les joueurs l'ont, et se répartit proportionnellement entre les deux selon le nombre de joueurs qui l'ont mis. Elle est arrondie à une décimale.<p style="margin-bottom:0">Exemple, dans une ligue de 4 joueurs :</p><ul class="cotes">${ex4}</ul>`)}
-  ${R('Sniper : de 0 à 40', `Le Sniper mesure la couverture de ton classement et la précision de tes placements, Monde et France réunis.<div class="ex">Sniper = 40 × (couverture × précision)²</div><ul class="plain"><li><b>Couverture</b> : la part du classement que tu as trouvée, de 0 à 100 %. Les athlètes du haut comptent davantage : le 1er vaut 2 fois le 10e (6,7 % de la couverture pour le 1er d'un classement, 3,3 % pour le 10e).</li><li><b>Précision</b> : à quel point tes athlètes trouvés sont proches de leur vrai rang, de 0 à 100 %. Chaque rang d'écart retire 10 % : 80 % correspond à 2 rangs d'écart en moyenne.</li><li><b>Le carré</b> est ce qui récompense les joueurs les plus complets et les plus précis : chaque athlète trouvé en plus, ou chaque placement plus juste, rapporte plus de points que le précédent.</li></ul><div class="ex">Exemple : couverture 62 % et précision 80 % donnent 40 × (0,62 × 0,80)² = 9,8 pts. Un classement parfait vaut 40. Le Sniper ne dépend pas de la cote.</div>`)}
+  ${R('Pifomètre : de 0 à 40', `Le Pifomètre mesure la couverture de ton classement et la précision de tes placements, Monde et France réunis.<div class="ex">Pifomètre = 40 × (couverture × précision)²</div><ul class="plain"><li><b>Couverture</b> : la part du classement que tu as trouvée, de 0 à 100 %. Les athlètes du haut de classement comptent davantage : le 1er vaut 2 fois le 10e (6,7 % de la couverture pour le 1er, 3,3 % pour le 10e).</li><li><b>Précision</b> : à quel point tes athlètes trouvés sont proches de leur vrai rang, de 0 à 100 %. Chaque rang d'écart retire 10 % : 80 % correspond à 2 rangs d'écart en moyenne.</li><li><b>Le carré</b> permet de récompenser les joueurs les plus complets et les plus précis : chaque athlète trouvé en plus, ou chaque placement plus juste, rapporte plus de points que le précédent.</li></ul><div class="ex">Exemple : couverture 62 % et précision 80 % donnent 40 × (0,62 × 0,80)² = 9,8 pts. Un classement parfait vaut 40. Le Pifomètre ne dépend pas de la cote.</div>`)}
   ${R('Champion', 'Si ton n°1 est aussi le n°1 d\'Eurosport, tu gagnes un bonus de <b>4 × la cote</b> de cet athlète. Le bonus s\'applique séparément en Monde et en France.')}
   ${R('Looser', 'Malus si tu n\'avais pas dans ton Top 10 un athlète du Top 10 d\'Eurosport que presque toute la ligue avait. Il s\'applique <b>une seule fois</b>, quel que soit le nombre d\'athlètes manqués, Monde et France confondus. Montant : 2 joueurs <b>0</b>, 3 joueurs <b>−2</b>, 4 joueurs <b>−3</b>, 5 joueurs et plus <b>−5</b>. Jusqu\'à 4 joueurs, tous les autres doivent avoir eu l\'athlète ; à partir de 5, au moins 80 % de la ligue.')}
   </section><p class="note">Pronos modifiables jusqu'au ${closesLabel()}. Eurosport dévoile un athlète par jour et par classement, du 10e (vers le ${dateOf(10)}) au 1er (le ${dateOf(1)}).</p>${legalNote()}`;
@@ -736,6 +766,14 @@ function makeSupabaseApi(cfg) {
     resetPassword: (userId, code) => rpc('admin_reset_password', { p_token: token, p_user: userId, p_new: code }),
     changePseudo: p => rpc('change_pseudo', { p_token: token, p_pseudo: p }),
     async changeCode(oldCode, newCode) { const r = await rpc('change_code', { p_token: token, p_old: oldCode, p_new: newCode }); if (!r.ok) throw new Error(r.error); },
+    pushSubscribe: (endpoint, p256dh, auth) => rpc('push_subscribe', { p_token: token, p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth }),
+    pushUnsubscribe: endpoint => rpc('push_unsubscribe', { p_token: token, p_endpoint: endpoint }),
+    /* Réveille la fonction serveur d'envoi des notifications (sans erreur bloquante : le jeu fonctionne sans elle) */
+    async notify(extra) {
+      const url = cfg.FUNCTIONS_URL || (String(cfg.SUPABASE_URL).replace(/\/+$/, '') + '/functions/v1/notify');
+      try { const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(Object.assign({ token }, extra || {})) }); return await r.json(); }
+      catch (_) { return { ok: false, error: 'network' }; }
+    },
     async deleteAccount() { await rpc('delete_my_account', { p_token: token }); setToken(null); uid = null; }
   };
 }
@@ -831,13 +869,56 @@ function vPronos() {
   const me = STATE.me;
   if (locked()) {
     const L = leagueFor(me), d = compute(STATE, STATE.n, L);
-    return `<div><h2>Mes pronos</h2><p class="sub">Les pronos sont verrouillés depuis la clôture (${closesLabel()}). Voici tes choix et les points obtenus dans « ${esc(L.name)} ».</p></div>${leagueChips()}${tableFor('monde', 'Monde', me, d)}${tableFor('france', 'France', me, d)}`;
+    return `<div><h2>Mes pronos</h2><p class="sub">Les pronos sont verrouillés depuis la clôture (${closesLabel()}). Voici tes choix et les points obtenus dans « ${esc(L.name)} ».</p></div>${leagueChips()}${tableFor('monde', 'Monde', me, d)}${tableFor('france', 'France', me, d)}<div><button class="btn ghost block" data-act="dl-own">Télécharger mes pronos (CSV)</button></div>`;
   }
   const col = ([c, label]) => `<section class="card"><h3>${label}</h3><div id="tiles-${c}">${tilesHtml(c, label)}</div></section>`;
   const s = saveText();
   return `<div><h2>Mes pronos</h2><p class="sub">Compose ton Top 10 Monde et ton Top 10 France. Tout s'enregistre au fur et à mesure. Déplace les tuiles avec la poignée ⠿ ou les boutons ▲ ▼. Les cinq emplacements de réserve te servent de brouillon : seuls les dix premiers comptent. Tu peux noter pour toi-même ce que l'athlète a fait cette année : cette note reste privée. Les noms proposés ne sont que des suggestions, le gamemaster harmonise les orthographes différentes.</p></div>
     <section class="card cdcard"><h3>Clôture des pronos dans</h3>${cdHtml()}<p style="margin-top:10px">Modifiables jusqu'au ${closesLabel()}</p></section>
-    <button class="btn gold block" data-act="save">Valider mes pronos</button><div class="${s[1]}" id="saveMsg">${esc(s[0])}</div>${col(CLS[0])}${col(CLS[1])}`;
+    <button class="btn gold block" data-act="save">Valider mes pronos</button><div class="${s[1]}" id="saveMsg">${esc(s[0])}</div>${col(CLS[0])}${col(CLS[1])}<div><button class="btn ghost block" data-act="dl-own">Télécharger mes pronos (CSV)</button><p class="note" style="margin:6px 0 0">Ta copie personnelle : tes dix athlètes par classement, ta réserve et tes notes. Un fichier à garder au chaud.</p></div>`;
+}
+
+/* --- notifications push --- */
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64ToBytes = b => { const p = '='.repeat((4 - b.length % 4) % 4), r = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map(c => c.charCodeAt(0))); };
+async function pushRefresh() {
+  if (!CFG.VAPID_PUBLIC_KEY) { ui.pushState = 'off-config'; return; }
+  if (isIOS() && !isStandalone()) { ui.pushState = 'ios-install'; return; }
+  if (!pushSupported()) { ui.pushState = 'unsupported'; return; }
+  if (Notification.permission === 'denied') { ui.pushState = 'denied'; return; }
+  try { const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); ui.pushState = sub ? 'on' : 'off'; }
+  catch (_) { ui.pushState = 'unsupported'; }
+}
+function pushCard() {
+  const st = ui.pushState || 'off', info = { 'off-config': '', unsupported: '<p class="note" style="margin:0">Ce navigateur ne gère pas les notifications.</p>',
+    'ios-install': '<p class="note" style="margin:0">Sur iPhone, ajoute d\'abord l\'application à ton écran d\'accueil (carte ci-dessus), puis rouvre-la depuis son icône : le bouton d\'activation apparaîtra ici.</p>',
+    denied: '<p class="note" style="margin:0">Les notifications sont bloquées dans les réglages de ton navigateur ou de ton téléphone. Autorise-les pour ce site, puis reviens ici.</p>',
+    off: '<div><button class="btn small" data-act="pushon">Activer les notifications</button></div>',
+    on: '<p class="note" style="margin:0">Notifications activées sur cet appareil ✓</p><div class="rowflex"><button class="btn ghost small" data-act="pushtest">Envoyer un test</button><button class="btn ghost small" data-act="pushoff">Désactiver</button></div>' }[st];
+  if (st === 'off-config') return '';
+  return `<section class="card stack"><h3>Notifications</h3><p class="sub" style="margin:0">Des rappels avant la clôture, puis un message à chaque athlète dévoilé et à chaque changement de classement. À activer sur chaque appareil.</p>${info}</section>`;
+}
+async function pushEnable() {
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Notifications non autorisées'); await pushRefresh(); render(); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.VAPID_PUBLIC_KEY) });
+    const j = sub.toJSON();
+    await API.pushSubscribe(j.endpoint, j.keys.p256dh, j.keys.auth);
+    toast('Notifications activées');
+  } catch (e) { console.error(e); toast(errMsg(e)); }
+  await pushRefresh(); render();
+}
+async function pushDisable() {
+  try { const reg = await navigator.serviceWorker.getRegistration(), sub = reg && await reg.pushManager.getSubscription(); if (sub) { await API.pushUnsubscribe(sub.endpoint); await sub.unsubscribe(); } toast('Notifications désactivées'); }
+  catch (e) { console.error(e); toast(errMsg(e)); }
+  await pushRefresh(); render();
+}
+async function pushTest() {
+  toast('Envoi du test…');
+  const r = await API.notify({ test: true });
+  toast(r && r.ok ? (r.sent > 0 ? 'Test envoyé : la notification arrive' : 'Aucun appareil abonné') : r && r.error === 'vapid_missing' ? 'Le serveur n\'est pas encore configuré (clés manquantes)' : 'Le serveur de notifications ne répond pas');
 }
 
 /* --- profil --- */
@@ -847,9 +928,9 @@ function leagueRow(l, id, own) {
   let h = `<div class="lg"><div><b>${esc(l.name)}</b><div class="note">${l.members.length} joueur${l.members.length > 1 ? 's' : ''}${rankTxt}</div></div>${own ? `<button class="btn ghost small" data-open="${esc(l.id)}">Classement</button>` : ''}
     ${own ? `<div class="rowflex"><span class="code">${esc(l.code)}</span><button class="link" data-act="copy" data-code="${esc(l.code)}">Copier le code</button>${canManage ? `<button class="link" data-act="manage" data-id="${esc(l.id)}">Gérer</button>` : ''}<button class="link" data-act="leave" data-id="${esc(l.id)}">Quitter</button></div>` : ''}</div>`;
   if (own && canManage && ui.manage === l.id) {
-    h += `<div class="stack" style="padding:4px 0 12px"><label class="lab" for="rename-name">Nom de la ligue</label><div class="rowflex"><input class="field" id="rename-name" maxlength="40" value="${esc(l.name)}" style="flex:1"><button class="btn small" data-act="rename" data-id="${esc(l.id)}">Renommer</button></div>
+    h += `<div class="stack" style="padding:4px 0 12px"><label class="lab" for="rename-name">Nom de la ligue</label><div class="rowflex"><input class="field" id="rename-name" maxlength="40" value="${esc(l.name)}" style="flex:1"><button class="btn small" data-act="rename" data-id="${esc(l.id)}">Renommer</button></div><p class="note" style="margin:0">Le nom doit être libre : deux ligues ne peuvent pas porter le même nom.</p>
       <label class="lab">Membres</label>${l.members.map(m => `<div class="rowflex" style="justify-content:space-between"><span>${esc(uname(m))}${m === l.owner ? ' <span class="note">(créateur)</span>' : ''}</span>${m !== l.owner ? `<button class="link" data-act="rmmember" data-id="${esc(l.id)}" data-uid="${esc(m)}">Retirer</button>` : ''}</div>`).join('')}
-      ${ui.confirmLeague === l.id ? `<p class="neg" style="margin:6px 0">Supprimer définitivement cette ligue ?</p><div class="rowflex"><button class="btn small" style="background:var(--red);border-color:var(--red)" data-act="dellg" data-id="${esc(l.id)}">Oui, supprimer</button><button class="btn ghost small" data-act="dellg-cancel">Annuler</button></div>` : `<div><button class="btn ghost small" data-act="dellg-ask" data-id="${esc(l.id)}">Supprimer la ligue</button></div>`}</div>`;
+      ${ui.confirmLeague === l.id ? `<p class="neg" style="margin:6px 0">Supprimer définitivement cette ligue ? Les pronos des joueurs sont conservés.</p><div class="rowflex"><button class="btn small" style="background:var(--red);border-color:var(--red)" data-act="dellg" data-id="${esc(l.id)}">Oui, supprimer</button><button class="btn ghost small" data-act="dellg-cancel">Annuler</button></div>` : `<div><button class="btn ghost small" data-act="dellg-ask" data-id="${esc(l.id)}">Supprimer la ligue</button></div>`}</div>`;
   }
   return h;
 }
@@ -876,7 +957,7 @@ function vProfil() {
   }
   if (isAdmin(me)) { const nc = pendingCount();
     h += `<section class="card stack"><h3>Espace gamemaster</h3><p class="sub" style="margin:0">Tu publies les athlètes d'Eurosport, tu harmonises les noms et tu gères les gamemasters.${nc ? ` <b class="neg">${nc} point${nc > 1 ? 's' : ''} à traiter.</b>` : ''}</p><button class="btn gold" data-go="gm">Ouvrir l'espace gamemaster</button></section>`; }
-  h += installCard();
+  h += installCard() + pushCard();
   h += `<section class="card stack"><h3>Mon compte</h3>${ui.pseudoOpen ? `<div class="stack"><label class="lab" for="ps-new">Nouveau pseudo</label><input class="field" id="ps-new" maxlength="24" autocomplete="off" autocapitalize="off" value="${esc(u.name)}"><p class="note" style="margin:0">Tes pronos et tes ligues sont conservés. Les autres joueurs verront le nouveau pseudo.</p><div class="rowflex"><button class="btn small" data-act="chpseudo">Enregistrer</button><button class="btn ghost small" data-act="pseudoopen">Annuler</button></div></div>` : '<div><button class="btn ghost small" data-act="pseudoopen">Changer mon pseudo</button></div>'}${ui.codeOpen ? `<div class="stack"><label class="lab" for="cc-old">Code actuel</label><input class="field" id="cc-old" type="password" autocomplete="current-password"><label class="lab" for="cc-new">Nouveau code (6 caractères minimum)</label><input class="field" id="cc-new" type="password" autocomplete="new-password"><label class="lab" for="cc-new2">Confirme le nouveau code</label><input class="field" id="cc-new2" type="password" autocomplete="new-password"><div class="rowflex"><button class="btn small" data-act="chcode">Enregistrer</button><button class="btn ghost small" data-act="codeopen">Annuler</button></div></div>` : '<div><button class="btn ghost small" data-act="codeopen">Changer mon code</button></div>'}${ui.confirmDelete ? '<p class="neg" style="margin:0">Supprimer définitivement ton compte, tes pronos et tes ligues créées sans autre membre ?</p><div class="rowflex"><button class="btn small" style="background:var(--red);border-color:var(--red)" data-act="delacct">Oui, supprimer mon compte</button><button class="btn ghost small" data-act="delacct-cancel">Annuler</button></div>' : '<div class="rowflex"><button class="btn ghost small" data-act="logout">Se déconnecter</button><button class="btn ghost small" data-act="delacct-ask">Supprimer mon compte</button></div>'}</section>${legalNote()}`;
   return h;
 }
@@ -903,14 +984,15 @@ function vGm() {
     const r = i + 1, shown = String(v).trim() !== '';
     return `<div class="slot gm"><span class="num">${r}</span><span class="sp" id="gsp-${c}-${i}"></span><input data-reveal="${c}:${i}" list="athletes" value="${esc(v)}" autocomplete="off" maxlength="80" aria-label="${label} vraie place ${r}" placeholder="À publier"><select data-sport="${c}:${i}" aria-label="Sport de l'athlète ${label} ${r}"${shown ? '' : ' disabled'}>${opts(sportOf(v))}</select></div><div class="note" style="margin:-3px 0 0 calc(2.2ch + 8px)">${rl(r)} · dévoilé le ${dateOf(r)}${shown ? ' · <b>publié</b>' : ''}</div>`;
   }).join('') + '</section>';
-  const people = STATE.users.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<div class="who2"><div class="rowflex" style="justify-content:space-between"><span><b>${esc(u.name)}</b> ${roleBadge(u)}${u.id === STATE.me ? ' <span class="note">(toi)</span>' : ''}</span>
+  const people = STATE.users.slice().sort((a, b) => (isAdmin(b.id) - isAdmin(a.id)) || a.name.localeCompare(b.name, 'fr')).map(u => `<div class="who2"><div class="rowflex" style="justify-content:space-between"><span><b>${esc(u.name)}</b> ${roleBadge(u)}${u.id === STATE.me ? ' <span class="note">(toi)</span>' : ''}</span>
       ${u.id === STATE.me ? '' : `<span class="rowflex"><button class="link" data-act="role" data-uid="${esc(u.id)}" data-role="${u.role === 'admin' ? 'member' : 'gamemaster'}">${u.role === 'admin' ? 'Retirer le rôle' : 'Nommer gamemaster'}</button><button class="link" data-act="resetopen" data-uid="${esc(u.id)}">Nouveau code</button></span>`}</div>
       ${ui.resetFor === u.id ? `<div class="rowflex" style="margin-top:6px"><input class="field" id="reset-code" placeholder="Nouveau code (6 caractères min.)" style="flex:1" autocomplete="off"><button class="btn small" data-act="reset" data-uid="${esc(u.id)}">Enregistrer</button></div><p class="note" style="margin:4px 0 0">Transmets ce code au joueur. Il pourra ensuite le modifier depuis son profil.</p>` : ''}</div>`).join('');
   return `<div><button class="btn ghost small" data-go="profil">← Profil</button></div><div><h2>Gamemaster</h2><p class="sub">Après la clôture, tu harmonises l'orthographe des noms. Puis, chaque jour du 10e au 1er, tu saisis le nom publié par Eurosport dans chaque classement : les scores se recalculent pour toutes les ligues.</p></div>
   <div><h3>Rapprochement des noms${cl.length ? ' (' + cl.length + ')' : ''}</h3></div>${clusters}
   <div><h3>Conflits avec les athlètes publiés${cf.length ? ' (' + cf.length + ')' : ''}</h3></div>${conf}
   <div><h3>Athlètes publiés par Eurosport</h3><p class="sub" style="margin:4px 0 0">Saisis-les dans l'ordre : le 10e en premier, le 1er le 31 décembre.</p></div>${col(CLS[0])}${col(CLS[1])}
-  <div><h3>Joueurs et rôles</h3><p class="sub" style="margin:4px 0 0">Tu peux nommer ou retirer un gamemaster, et donner un nouveau code à un joueur qui a oublié le sien. Il reste toujours au moins un gamemaster.</p></div><section class="card stack">${people}</section>`;
+  <div><h3>Joueurs et rôles</h3><p class="sub" style="margin:4px 0 0">Tu peux nommer ou retirer un gamemaster, et donner un nouveau code à un joueur qui a oublié le sien. Il reste toujours au moins un gamemaster. Les gamemasters sont en haut de la liste.</p></div><section class="card stack">${people}</section>
+  <div><h3>Sauvegarde des pronos</h3><p class="sub" style="margin:4px 0 0">Un fichier avec les pronos de tous les joueurs, à garder de côté en cas de pépin. Disponible après la clôture, quand les gamemasters peuvent voir les pronos.</p></div>${clo ? '<div><button class="btn gold block" data-act="dl-all">Télécharger les pronos de tous les joueurs (CSV)</button></div>' : `<section class="card"><p class="note" style="margin:0">Disponible après la clôture (${closesLabel()}).</p></section>`}`;
 }
 
 /* --- assemblage --- */
@@ -988,6 +1070,11 @@ document.addEventListener('click', async e => {
   }
   else if (D.act === 'copy') { try { navigator.clipboard.writeText(D.code).then(() => toast('Code copié : ' + D.code), () => toast('Code : ' + D.code)); } catch (_) { toast('Code : ' + D.code); } }
   else if (D.act === 'manage') { ui.manage = ui.manage === D.id ? null : D.id; ui.confirmLeague = null; render(); }
+  else if (D.act === 'dl-own') exportOwn();
+  else if (D.act === 'dl-all') exportAll();
+  else if (D.act === 'pushon') await pushEnable();
+  else if (D.act === 'pushoff') await pushDisable();
+  else if (D.act === 'pushtest') await pushTest();
   else if (D.act === 'rename') { const n = val('rename-name').trim(); await act(() => API.renameLeague(D.id, n), 'Ligue renommée'); }
   else if (D.act === 'rmmember') { await act(() => API.removeMember(D.id, D.uid), 'Joueur retiré'); }
   else if (D.act === 'leave') { ui.manage = null; await act(() => API.leaveLeague(D.id), 'Tu as quitté la ligue'); }
@@ -1070,7 +1157,7 @@ const endDrag = e => {
 document.addEventListener('pointerup', endDrag); document.addEventListener('pointercancel', endDrag);
 document.addEventListener('change', async e => {
   const t = e.target; if (!STATE) return;
-  if (t.dataset.reveal) { const [c, i] = t.dataset.reveal.split(':'); await act(() => API.setReveal(STATE.season, c, +i + 1, t.value.trim()), t.value.trim() ? 'Publié' : 'Retiré'); }
+  if (t.dataset.reveal) { const [c, i] = t.dataset.reveal.split(':'); const ok = await act(() => API.setReveal(STATE.season, c, +i + 1, t.value.trim()), t.value.trim() ? 'Publié' : 'Retiré'); if (ok && t.value.trim() && CFG.VAPID_PUBLIC_KEY && API.notify) API.notify({}); }
   else if (t.dataset.sport) { const [c, i] = t.dataset.sport.split(':'), name = STATE.actual[c][+i]; if (name) await act(() => API.setSport(cn(name), t.value), 'Sport enregistré'); }
   else if (t.dataset.psport) { const [c, i] = t.dataset.psport.split(':'), name = STATE.slots[c][+i].n; if (name.trim()) { STATE.sports[cn(name)] = t.value; paintSports(); try { await API.setSport(cn(name), t.value); } catch (err) { console.error(err); } } }
 });
@@ -1086,7 +1173,7 @@ async function boot() {
     if (new URLSearchParams(location.search).has('diagnostic')) { await runDiagnostic(); return; }
     const s = await API.init();
     if (!s) { render(); return; }
-    try { await refresh(); }
+    try { await pushRefresh(); await refresh(); }
     catch (e) { if (/not_authenticated/.test(String(e && e.message))) { await API.signOut(); STATE = null; render(); } else throw e; }
   } catch (e) { console.error(e); document.getElementById('app').innerHTML = vFatal(e); }
 }
