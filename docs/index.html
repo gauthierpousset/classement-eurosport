@@ -385,7 +385,7 @@ const CFG = window.APP_CONFIG || {};
 let API = null, STATE = null;
 const clock = { offset: 0 };
 const serverNow = () => Date.now() + clock.offset;
-const ui = { save: '', saveErr: false, dirty: false, metric: 'total', view: 'classement', auth: null, msg: '', msgErr: false,
+const ui = { draft: {}, pub: null, save: '', saveErr: false, dirty: false, metric: 'total', view: 'classement', auth: null, msg: '', msgErr: false,
   joinOpen: false, createOpen: false, codeOpen: false, pseudoOpen: false, pushState: 'off', joinMsg: '', createMsg: '', profile: null, step: null, stepN: -1, manage: null, resetFor: null, confirmDelete: false, confirmLeague: null };
 const locked = () => !!STATE && serverNow() >= STATE.closesAt;
 const user = id => STATE.users.find(u => u.id === id);
@@ -527,6 +527,7 @@ function paintSports() {
     if (s) s.textContent = has ? SPORTS[sportOf(el.value)][0] : '';
     if (sel) { sel.disabled = !has; if (has) sel.value = sportOf(el.value); }
   });
+  document.querySelectorAll('input[data-draft]').forEach(el => { const s = document.getElementById('gsp-' + el.dataset.draft.replace(':', '-')); if (s) s.textContent = el.value.trim() ? SPORTS[sportOf(el.value)][0] : ''; });
   document.querySelectorAll('input[data-ac]').forEach(el => { const s = document.getElementById('gsp-' + el.dataset.ac + '-' + el.dataset.i); if (s) s.textContent = el.value.trim() ? SPORTS[sportOf(el.value)][0] : ''; });
 }
 
@@ -561,7 +562,7 @@ function sniperCard(j, own = true) {
   const pct = x => Math.round(x) + ' %';
   const row = (l, o) => `<tr><th>${l}</th><td>${pct(o.now)}</td><td>${pct(o.max)}</td></tr>`;
   const met = (v, l) => `<div class="tile"><b class="num">${v}<small> / ${s.revealed}</small></b><span>${l}</span></div>`;
-  return `<section class="card"><h3>Pifomètre</h3><p class="sub">Mesure ${own ? 'ta' : 'sa'} couverture et ${own ? 'ta' : 'sa'} précision, Monde et France réunis. Maximum : ${SNIPER} pts.</p>
+  return `<section class="card"><h3>Pifomètre</h3><p class="sub">${own ? 'Ton' : 'Son'} nez en un chiffre : as-${own ? 'tu' : 'il'} déniché les bons athlètes, et au bon endroit ? Monde et France réunis, de 0 à ${SNIPER} pts.</p>
   <div class="tiles"><div class="tile hl"><span>Acquis</span><b class="num">${f1(j.acq)}</b></div><div class="tile"><span>À gagner</span><b class="num">${f1(j.pot)}</b></div><div class="tile"><span>Perdu</span><b class="num">${f1(j.lost)}</b></div></div>
   <div class="bar" role="img" aria-label="Pifomètre : points acquis, à gagner et perdus"><i class="pot" style="width:${pc(j.acq + j.pot)}%"></i><i class="acq" style="width:${pc(j.acq)}%"></i></div>
   <div class="legend"><span><b>Acquis</b> : points obtenus sur les athlètes déjà dévoilés.</span><span><b>À gagner</b> : points encore atteignables avec les athlètes de ${ton} Top 10 pas encore dévoilés.</span><span><b>Perdu</b> : points définitivement hors d'atteinte.</span></div>
@@ -657,7 +658,7 @@ function vRegles() {
   <section class="card stack" style="gap:18px">
   ${R('Monde et France', 'Pour chaque classement, tu établis ton Top 10. Chaque athlète de ton Top 10 qui figure aussi dans celui d\'Eurosport rapporte un <b>score de placement</b> : <b>4</b> à la bonne place, <b>3</b> à un rang d\'écart, <b>2</b> ailleurs dans le Top 10. Ce score est multiplié par la <b>cote</b> de l\'athlète.')}
   ${R('La cote', `La cote récompense le flair et l'exclusivité. Elle vaut <b>×2</b> si tu es le seul joueur de la ligue à avoir mis l'athlète dans ton classement, <b>×1</b> si tous les joueurs l'ont, et se répartit proportionnellement entre les deux selon le nombre de joueurs qui l'ont mis. Elle est arrondie à une décimale.<p style="margin-bottom:0">Exemple, dans une ligue de 4 joueurs :</p><ul class="cotes">${ex4}</ul>`)}
-  ${R('Pifomètre : de 0 à 40', `Le Pifomètre mesure la couverture de ton classement et la précision de tes placements, Monde et France réunis.<div class="ex">Pifomètre = 40 × (couverture × précision)²</div><ul class="plain"><li><b>Couverture</b> : la part du classement que tu as trouvée, de 0 à 100 %. Les athlètes du haut de classement comptent davantage : le 1er vaut 2 fois le 10e (6,7 % de la couverture pour le 1er, 3,3 % pour le 10e).</li><li><b>Précision</b> : à quel point tes athlètes trouvés sont proches de leur vrai rang, de 0 à 100 %. Chaque rang d'écart retire 10 % : 80 % correspond à 2 rangs d'écart en moyenne.</li><li><b>Le carré</b> permet de récompenser les joueurs les plus complets et les plus précis : chaque athlète trouvé en plus, ou chaque placement plus juste, rapporte plus de points que le précédent.</li></ul><div class="ex">Exemple : couverture 62 % et précision 80 % donnent 40 × (0,62 × 0,80)² = 9,8 pts. Un classement parfait vaut 40. Le Pifomètre ne dépend pas de la cote.</div>`)}
+  ${R('Pifomètre : de 0 à 40', `Le Pifomètre mesure ton flair, tout simplement. Deux questions : as-tu trouvé les bons athlètes ? Les avais-tu mis au bon endroit ? Pas de cote ici : seul ton nez compte. De 0 à 40 pts.<div class="ex">Pifomètre = 40 × (couverture × précision)²</div><ul class="plain"><li><b>Couverture</b> : combien d'athlètes du vrai classement tu avais dans ton Top 10, de 0 à 100 %. Les stars du haut de classement pèsent plus lourd : le 1er vaut 2 fois le 10e (6,7 % pour le 1er, 3,3 % pour le 10e).</li><li><b>Précision</b> : à quel point tes athlètes étaient bien placés, de 0 à 100 %. Chaque rang d'écart coûte 10 % : 80 %, c'est 2 rangs d'écart en moyenne.</li><li><b>Le carré</b> récompense les nez les plus fins : trouver plus d'athlètes et mieux les placer rapporte de plus en plus. Un nez moyen reste modeste, un nez d'exception fait exploser le compteur.</li></ul><div class="ex">Exemple : couverture 62 % et précision 80 % donnent 40 × (0,62 × 0,80)² = 9,8 pts. Un classement parfait vaut 40.</div>`)}
   ${R('Champion', 'Si ton n°1 est aussi le n°1 d\'Eurosport, tu gagnes un bonus de <b>4 × la cote</b> de cet athlète. Le bonus s\'applique séparément en Monde et en France.')}
   ${R('Looser', 'Malus si tu n\'avais pas dans ton Top 10 un athlète du Top 10 d\'Eurosport que presque toute la ligue avait. Il s\'applique <b>une seule fois</b>, quel que soit le nombre d\'athlètes manqués, Monde et France confondus. Montant : 2 joueurs <b>0</b>, 3 joueurs <b>−2</b>, 4 joueurs <b>−3</b>, 5 joueurs et plus <b>−5</b>. Jusqu\'à 4 joueurs, tous les autres doivent avoir eu l\'athlète ; à partir de 5, au moins 80 % de la ligue.')}
   </section><p class="note">Pronos modifiables jusqu'au ${closesLabel()}. Eurosport dévoile un athlète par jour et par classement, du 10e (vers le ${dateOf(10)}) au 1er (le ${dateOf(1)}).</p>${legalNote()}`;
@@ -669,15 +670,18 @@ const toks = s => norm(s).split(/[\s\-']+/).filter(Boolean);
 function similar(p, a) {
   if (p === a) return false;
   const tp = toks(p), ta = toks(a); if (!tp.length || !ta.length) return false;
-  if (tp.every(t => ta.includes(t)) || ta.every(t => tp.includes(t))) return true;
+  if (tp.every(t => ta.includes(t)) || ta.every(t => tp.includes(t))) return true;   // nom de famille seul, ou prénom absent
+  const tin = (x, y) => x.every(t => y.some(u => u === t || (Math.min(t.length, u.length) >= 4 && lev(t, u) <= 1)));
+  if (tin(tp, ta) || tin(ta, tp)) return true;   // idem, avec une faute de frappe par mot
   const lp = tp[tp.length - 1], la = ta[ta.length - 1]; if (lp === la && lp.length >= 4) return true;
+  if (tp.length === ta.length && tp.every((t, i) => t === ta[i] || (Math.min(t.length, ta[i].length) >= 4 && lev(t, ta[i]) <= 1))) return true;   // mêmes mots, une faute de frappe par mot
   return lev(norm(p), norm(a)) <= 2;
 }
 function conflicts() {
   const out = [], seen = new Set();
   for (const [c, label] of CLS) {
-    const revealed = new Set(); for (let r = 10; r >= 11 - STATE.n && r >= 1; r--) if (STATE.actual[c][r - 1]) revealed.add(cn(STATE.actual[c][r - 1]));
-    for (let r = 10; r >= 11 - STATE.n && r >= 1; r--) {
+    const nc = nOf(STATE.n, c), revealed = new Set(); for (let r = 10; r >= 11 - nc && r >= 1; r--) if (STATE.actual[c][r - 1]) revealed.add(cn(STATE.actual[c][r - 1]));
+    for (let r = 10; r >= 11 - nc && r >= 1; r--) {
       const A = STATE.actual[c][r - 1]; if (!A) continue; const a = cn(A), byName = {};
       STATE.users.forEach(u => (STATE.picks[u.id] ? STATE.picks[u.id][c] : []).forEach(P => { const pn = norm(P); if (!pn) return; (byName[pn] = byName[pn] || { raw: P, users: new Set() }).users.add(u.name); }));
       Object.entries(byName).forEach(([pn, o]) => {
@@ -688,6 +692,43 @@ function conflicts() {
     }
   }
   return out;
+}
+/* Rapprochements à valider AVANT de publier un athlète : pronos des joueurs dont le nom ressemble au nom saisi par le gamemaster (nom de famille seul, accents, fautes). */
+function pubMatches(c, name, rank) {
+  if (!locked()) return [];   /* les pronos des autres restent cachés avant la clôture */
+  const A = String(name || '').trim(); if (!A) return [];
+  const a = cn(A), an = norm(A), byName = {}, others = new Set(), out = [];
+  STATE.actual[c].forEach((x, k) => { if (x && k + 1 !== rank) others.add(cn(x)); });
+  STATE.users.forEach(u => (STATE.picks[u.id] ? STATE.picks[u.id][c] : []).forEach(P => { const pn = norm(P); if (!pn) return; (byName[pn] = byName[pn] || { raw: P, users: new Set() }).users.add(u.name); }));
+  Object.entries(byName).forEach(([pn, o]) => {
+    const key = c + '|' + pn + '|' + a;
+    if (cn(o.raw) === a || others.has(cn(o.raw)) || STATE.notAlias[key] || !similar(pn, an)) return;
+    out.push({ key, pick: o.raw, pn, a, users: [...o.users] });
+  });
+  return out;
+}
+/* Rapprochements à valider = ceux du nom saisi ET ceux de l'orthographe retenue (aucun ne peut être contourné). */
+function pubAll(c, typed, spell, rank) {
+  const seen = new Set(), out = [];
+  pubMatches(c, typed, rank).concat(spell && cn(spell) !== cn(typed) ? pubMatches(c, spell, rank) : []).forEach(m => { if (!seen.has(m.pn)) { seen.add(m.pn); out.push(m); } });
+  return out;
+}
+const pubDefault = (name, ms) => ms.reduce((best, m) => toks(m.pick).length > toks(best).length ? m.pick : best, name);
+/* Zone sous chaque case « publié » : bouton de validation, puis revue obligatoire des rapprochements. */
+function pubBlock(c, i, draft) {
+  const key = c + ':' + i, cur = String(STATE.actual[c][i] || '').trim(), d = String(draft).trim(), ind = 'margin:4px 0 6px calc(2.2ch + 8px)';
+  if (d === cur) return '';
+  if (!d) return `<div class="rowflex" style="${ind}"><button class="btn ghost small" data-act="pubreq" data-slot="${key}">Retirer la publication</button><button class="link" data-act="pubcancel" data-slot="${key}">Annuler</button></div>`;
+  if (ui.pub && ui.pub.key === key) {
+    const spell = ui.pub.spell || d, ms = pubAll(c, d, spell, i + 1);
+    return `<section class="card conf stack" style="margin:6px 0"><div><b>Avant de publier « ${esc(spell)} »</b></div>`
+      + (ms.length ? `<p class="note" style="margin:0">Ces pronos ressemblent à cet athlète (nom de famille seul, accent ou faute). Valide chaque rapprochement : deux athlètes peuvent porter le même nom.</p>` + ms.map(m => `<div class="stack" style="gap:6px;padding:8px 0;border-top:1px solid var(--line)"><div>${sp(m.pick)}<b>« ${esc(m.pick)} »</b> <span class="note">(${m.users.map(esc).join(', ')})</span></div><div class="rowflex"><button class="btn small" data-act="pubsame" data-pk="${esc(m.key)}">Oui, c'est le même</button><button class="btn ghost small" data-act="pubdiff" data-pk="${esc(m.key)}">Non, deux athlètes</button></div></div>`).join('')
+        : '<p class="note" style="margin:0">✓ Tous les rapprochements sont validés.</p>')
+      + `<div><label class="lab" for="pub-spell">Orthographe publiée</label><input class="field" id="pub-spell" list="athletes" value="${esc(spell)}" autocomplete="off"><p class="note" style="margin:4px 0 0">Elle remplace les variantes validées dans tous les pronos.</p></div>`
+      + `<div class="rowflex"><button class="btn gold small" data-act="pubgo" data-slot="${key}"${ms.length ? ' disabled' : ''}>Publier l'athlète</button><button class="link" data-act="pubcancel" data-slot="${key}">Annuler</button></div>`
+      + (ms.length ? '<p class="note neg" style="margin:0">Publication bloquée tant qu\'il reste un rapprochement à valider.</p>' : '') + '</section>';
+  }
+  return `<div class="rowflex" style="${ind}"><button class="btn gold small" data-act="pubreq" data-slot="${key}">Valider la publication</button><button class="link" data-act="pubcancel" data-slot="${key}">Annuler</button></div>`;
 }
 function nameClusters() {
   if (!locked()) return [];   /* les gamemasters ne voient les pronos qu'après la clôture */
@@ -962,6 +1003,12 @@ function vProfil() {
   return h;
 }
 
+async function pubPublish(key, name) {
+  const [c, i] = key.split(':');
+  delete ui.draft[key]; ui.pub = null;
+  const ok = await act(() => API.setReveal(STATE.season, c, +i + 1, name), name ? 'Publié' : 'Retiré');
+  if (ok && name && CFG.VAPID_PUBLIC_KEY && API.notify) { const r = await API.notify({}); setTimeout(() => toast(r && r.ok ? (r.sent ? 'Publié · ' + r.sent + ' notification' + (r.sent > 1 ? 's' : '') + ' envoyée' + (r.sent > 1 ? 's' : '') : 'Publié · aucune notification à envoyer') : 'Publié · notifications en erreur (' + ((r && r.error) || 'serveur injoignable') + ')'), 1200); }
+}
 /* --- gamemaster --- */
 function applyNames(variants, spelling, extraNorms) {
   const target = norm(spelling), norms = new Set(extraNorms); variants.forEach(v => { norms.add(norm(v)); norms.add(cn(v)); });
@@ -981,8 +1028,8 @@ function vGm() {
     <div class="rowflex"><button class="btn small" data-act="same" data-key="${esc(x.key)}">Oui, c'est le même</button><button class="btn ghost small" data-act="diff" data-key="${esc(x.key)}">Non, deux athlètes</button></div></section>`).join('') : '<section class="card"><p class="note" style="margin:0">Aucun conflit avec les noms publiés pour l\'instant.</p></section>';
   const opts = cur => Object.entries(SPORTS).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${v[0]} ${v[1]}</option>`).join('');
   const col = ([c, label]) => `<section class="card"><h3>${label}</h3>` + STATE.actual[c].map((v, i) => {
-    const r = i + 1, shown = String(v).trim() !== '';
-    return `<div class="slot gm"><span class="num">${r}</span><span class="sp" id="gsp-${c}-${i}"></span><input data-reveal="${c}:${i}" list="athletes" value="${esc(v)}" autocomplete="off" maxlength="80" aria-label="${label} vraie place ${r}" placeholder="À publier"><select data-sport="${c}:${i}" aria-label="Sport de l'athlète ${label} ${r}"${shown ? '' : ' disabled'}>${opts(sportOf(v))}</select></div><div class="note" style="margin:-3px 0 0 calc(2.2ch + 8px)">${rl(r)} · dévoilé le ${dateOf(r)}${shown ? ' · <b>publié</b>' : ''}</div>`;
+    const r = i + 1, shown = String(v).trim() !== '', key = c + ':' + i, draft = ui.draft[key] !== undefined ? ui.draft[key] : v;
+    return `<div class="slot gm"><span class="num">${r}</span><span class="sp" id="gsp-${c}-${i}"></span><input data-draft="${key}" list="athletes" value="${esc(draft)}" autocomplete="off" maxlength="80" aria-label="${label} vraie place ${r}" placeholder="À publier"><select data-sport="${c}:${i}" aria-label="Sport de l'athlète ${label} ${r}"${shown ? '' : ' disabled'}>${opts(sportOf(v))}</select></div><div class="note" style="margin:-3px 0 0 calc(2.2ch + 8px)">${rl(r)} · dévoilé le ${dateOf(r)}${shown ? ' · <b>publié</b>' : ''}</div>${pubBlock(c, i, draft)}`;
   }).join('') + '</section>';
   const people = STATE.users.slice().sort((a, b) => (isAdmin(b.id) - isAdmin(a.id)) || a.name.localeCompare(b.name, 'fr')).map(u => `<div class="who2"><div class="rowflex" style="justify-content:space-between"><span><b>${esc(u.name)}</b> ${roleBadge(u)}${u.id === STATE.me ? ' <span class="note">(toi)</span>' : ''}</span>
       ${u.id === STATE.me ? '' : `<span class="rowflex"><button class="link" data-act="role" data-uid="${esc(u.id)}" data-role="${u.role === 'admin' ? 'member' : 'gamemaster'}">${u.role === 'admin' ? 'Retirer le rôle' : 'Nommer gamemaster'}</button><button class="link" data-act="resetopen" data-uid="${esc(u.id)}">Nouveau code</button></span>`}</div>
@@ -990,7 +1037,7 @@ function vGm() {
   return `<div><button class="btn ghost small" data-go="profil">← Profil</button></div><div><h2>Gamemaster</h2><p class="sub">Après la clôture, tu harmonises l'orthographe des noms. Puis, chaque jour du 10e au 1er, tu saisis le nom publié par Eurosport dans chaque classement : les scores se recalculent pour toutes les ligues.</p></div>
   <div><h3>Rapprochement des noms${cl.length ? ' (' + cl.length + ')' : ''}</h3></div>${clusters}
   <div><h3>Conflits avec les athlètes publiés${cf.length ? ' (' + cf.length + ')' : ''}</h3></div>${conf}
-  <div><h3>Athlètes publiés par Eurosport</h3><p class="sub" style="margin:4px 0 0">Saisis-les dans l'ordre : le 10e en premier, le 1er le 31 décembre.</p></div>${col(CLS[0])}${col(CLS[1])}
+  <div><h3>Athlètes publiés par Eurosport</h3><p class="sub" style="margin:4px 0 0">Saisis le nom, puis clique sur « Valider la publication » : tu dois d'abord valider les rapprochements avec les pronos des joueurs (nom de famille seul, accent, faute). Ordre : le 10e en premier, le 1er le 31 décembre.</p></div>${col(CLS[0])}${col(CLS[1])}
   <div><h3>Joueurs et rôles</h3><p class="sub" style="margin:4px 0 0">Tu peux nommer ou retirer un gamemaster, et donner un nouveau code à un joueur qui a oublié le sien. Il reste toujours au moins un gamemaster. Les gamemasters sont en haut de la liste.</p></div><section class="card stack">${people}</section>
   <div><h3>Sauvegarde des pronos</h3><p class="sub" style="margin:4px 0 0">Un fichier avec les pronos de tous les joueurs, à garder de côté en cas de pépin. Disponible après la clôture, quand les gamemasters peuvent voir les pronos.</p></div>${clo ? '<div><button class="btn gold block" data-act="dl-all">Télécharger les pronos de tous les joueurs (CSV)</button></div>' : `<section class="card"><p class="note" style="margin:0">Disponible après la clôture (${closesLabel()}).</p></section>`}`;
 }
@@ -1002,6 +1049,11 @@ function fillDatalist() {
   STATE.picks[STATE.me][CLS[0][0]].concat(STATE.picks[STATE.me][CLS[1][0]]).forEach(x => { if (x) names.add(x); });
   document.getElementById('athletes').innerHTML = [...names].sort((a, b) => a.localeCompare(b, 'fr')).map(x => `<option value="${esc(x)}">`).join('');
 }
+/* Bandeau d'invitation : application installée, notifications pas encore activées. Un seul geste, la demande d'autorisation exige un tap. */
+const PUSH_HIDE = 'classement_push_hide_until';
+const pushBannerHidden = () => { try { return Number(localStorage.getItem(PUSH_HIDE) || 0) > Date.now(); } catch (_) { return false; } };
+const pushBanner = () => (ui.pushState === 'off' && CFG.VAPID_PUBLIC_KEY && isStandalone() && !pushBannerHidden())
+  ? `<section class="card stack" style="border-color:var(--gold)"><div><b>🔔 Active les notifications pour ne rien rater</b></div><p class="note" style="margin:0">Rappels avant la clôture, puis un message à chaque athlète dévoilé.</p><div class="rowflex"><button class="btn small" data-act="pushon">Activer</button><button class="link" data-act="pushlater">Plus tard</button></div></section>` : '';
 function render() {
   const app = document.getElementById('app');
   if (!STATE) { app.innerHTML = vAccueil(); return; }
@@ -1011,7 +1063,7 @@ function render() {
   const alertHtml = pend && v !== 'gm' ? `<button class="alert" data-go="gm"><span>⚠ ${pend} nom${pend > 1 ? 's' : ''} à rapprocher. Ouvrir l'espace gamemaster.</span></button>` : '';
   app.innerHTML = `<header class="top"><div class="brand"><div><h1>Classement Eurosport</h1><small>${esc(STATE.seasonLabel.toUpperCase())} · MONDE ET FRANCE</small></div>${starsHtml(nDays())}</div>
 </header>
-    <main>${alertHtml}${body}</main>
+    <main>${alertHtml}${v === 'profil' ? '' : pushBanner()}${body}</main>
     <nav class="bottom" aria-label="Sections"><div>${TABS.map(t => `<button data-go="${t[0]}"${(v === t[0] || (v === 'gm' && t[0] === 'profil')) ? ' aria-current="page"' : ''}>${ICON[t[0]]}<span>${t[1]}</span>${t[0] === 'profil' && pend ? `<b class="dot">${pend}</b>` : ''}</button>`).join('')}</div></nav>`;
   paintSports(); bindChart(); fillDatalist();
 }
@@ -1074,6 +1126,7 @@ document.addEventListener('click', async e => {
   else if (D.act === 'dl-all') exportAll();
   else if (D.act === 'pushon') await pushEnable();
   else if (D.act === 'pushoff') await pushDisable();
+  else if (D.act === 'pushlater') { try { localStorage.setItem(PUSH_HIDE, String(Date.now() + 5 * 864e5)); } catch (_) { /* ignore */ } render(); }
   else if (D.act === 'pushtest') await pushTest();
   else if (D.act === 'rename') { const n = val('rename-name').trim(); await act(() => API.renameLeague(D.id, n), 'Ligue renommée'); }
   else if (D.act === 'rmmember') { await act(() => API.removeMember(D.id, D.uid), 'Joueur retiré'); }
@@ -1109,6 +1162,25 @@ document.addEventListener('click', async e => {
   }
   else if (D.act === 'same') { const x = conflicts().find(c => c.key === D.key); if (x) await act(() => API.applySpelling(STATE.season, [x.pick, x.actual], x.actual, applyNames([x.pick, x.actual], x.actual, [x.pn, x.a])), 'Corrigé partout : ' + x.actual); }
   else if (D.act === 'diff') { await act(() => API.setRules(STATE.season, [{ kind: 'notalias', k: D.key, v: '' }]), 'Noté : deux athlètes différents'); }
+  else if (D.act === 'pubreq') {
+    const key = D.slot, [c, i] = key.split(':'), name = String(ui.draft[key] || '').trim();
+    const ms = name ? pubMatches(c, name, +i + 1) : [];
+    if (!ms.length) await pubPublish(key, name); else { ui.pub = { key, spell: pubDefault(name, ms) }; render(); }
+  }
+  else if (D.act === 'pubcancel') { if (D.slot) delete ui.draft[D.slot]; ui.pub = null; render(); }
+  else if (D.act === 'pubsame' && ui.pub) {
+    const [c, i] = ui.pub.key.split(':'), spell = (val('pub-spell') || ui.pub.spell).trim(), typed = String(ui.draft[ui.pub.key] || '').trim();
+    const m = pubAll(c, typed, spell, +i + 1).find(x => x.key === D.pk); if (!m || !spell) return;
+    ui.pub.spell = spell; ui.draft[ui.pub.key] = spell;
+    await act(() => API.applySpelling(STATE.season, [m.pick, typed, spell], spell, applyNames([m.pick, typed], spell, [m.pn, m.a])), 'Rapprochement validé');
+  }
+  else if (D.act === 'pubdiff' && ui.pub) { const ty = String(ui.draft[ui.pub.key] || '').trim(); if (ui.pub.spell && cn(D.pk.split('|')[1]) === cn(ui.pub.spell)) ui.pub.spell = ty; await act(() => API.setRules(STATE.season, [{ kind: 'notalias', k: D.pk, v: '' }]), 'Noté : deux athlètes différents'); }
+  else if (D.act === 'pubgo' && ui.pub) {
+    const key = ui.pub.key, [c, i] = key.split(':'), spell = (val('pub-spell') || ui.pub.spell).trim();
+    if (!spell) return;
+    if (pubAll(c, String(ui.draft[key] || '').trim(), spell, +i + 1).length) { ui.pub.spell = spell; render(); toast("Valide d'abord les rapprochements"); return; }
+    await pubPublish(key, spell);
+  }
   else if (D.act === 'role') { await act(() => API.setRole(D.uid, D.role), D.role === 'gamemaster' ? 'Gamemaster nommé' : 'Rôle retiré'); }
   else if (D.act === 'resetopen') { ui.resetFor = ui.resetFor === D.uid ? null : D.uid; render(); }
   else if (D.act === 'reset') { const c = val('reset-code'); if (c.length < 6) { toast('6 caractères minimum'); return; } ui.resetFor = null; await act(() => API.resetPassword(D.uid, c), 'Nouveau code enregistré'); }
@@ -1157,7 +1229,8 @@ const endDrag = e => {
 document.addEventListener('pointerup', endDrag); document.addEventListener('pointercancel', endDrag);
 document.addEventListener('change', async e => {
   const t = e.target; if (!STATE) return;
-  if (t.dataset.reveal) { const [c, i] = t.dataset.reveal.split(':'); const ok = await act(() => API.setReveal(STATE.season, c, +i + 1, t.value.trim()), t.value.trim() ? 'Publié' : 'Retiré'); if (ok && t.value.trim() && CFG.VAPID_PUBLIC_KEY && API.notify) API.notify({}); }
+  if (t.dataset.draft) { ui.draft[t.dataset.draft] = t.value; if (ui.pub && ui.pub.key === t.dataset.draft) ui.pub = null; render(); }
+  else if (t.id === 'pub-spell' && ui.pub) { ui.pub.spell = t.value.trim(); render(); }
   else if (t.dataset.sport) { const [c, i] = t.dataset.sport.split(':'), name = STATE.actual[c][+i]; if (name) await act(() => API.setSport(cn(name), t.value), 'Sport enregistré'); }
   else if (t.dataset.psport) { const [c, i] = t.dataset.psport.split(':'), name = STATE.slots[c][+i].n; if (name.trim()) { STATE.sports[cn(name)] = t.value; paintSports(); try { await API.setSport(cn(name), t.value); } catch (err) { console.error(err); } } }
 });
