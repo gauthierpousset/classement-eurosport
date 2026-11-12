@@ -253,8 +253,8 @@ const ATHLETES = [
 const W = r => 19 - r;                               // poids d'un athlète selon son rang réel : 18 pour le 1er, 9 pour le 10e (le 1er vaut 2 fois le 10e)
 const SNIPER = 40;                                   // maximum du Pifomètre : autant qu'un classement parfait à cote ×1 (4 pts × 10 athlètes)
 const SMAX = 270;                                    // poids total des deux Top 10 (135 par classement)
-const PREC = d => 1 - 0.1 * d;                       // justesse : -10 % par rang d'écart
-const pts = d => d === 0 ? 4 : d === 1 ? 3 : 2;      // score de placement
+const PREC = d => Math.max(0, 1 - 0.2 * d);         // précision d'un athlète : -20 % par rang d'écart, plancher à 0 % (à partir de 5 rangs)
+const pts = d => d === 0 ? 4 : d === 1 ? 3 : d === 2 ? 2 : 1;      // score de placement : 4-3-2-1
 const CHAMP = 4;                                     // bonus champion (x cote)
 const norm = s => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[´'’`]/g, "'").replace(/\s+/g, ' ');
 // ×2 si un seul joueur l'a, ×1 si tous l'ont, proportionnel entre les deux, arrondi à une décimale
@@ -329,7 +329,7 @@ function compute(st, nn, lg) {
     // couverture : part pondérée des athlètes trouvés ; précision : placement moyen des athlètes trouvés (100 % = tous au bon rang)
     const Wpot = Wf + m.fill.W + f.fill.W, Qpot = Q + m.fill.Q + f.fill.Q, npot = nF + m.fill.k + f.fill.k;   // meilleur cas réaliste
     const cA = Wf / SMAX, pA = nF > 0 ? Q / nF : 0, cP = Wpot / SMAX, pP = npot > 0 ? Qpot / npot : 0;
-    const sA = SNIPER * Math.pow(cA * pA, 2), sP = Math.max(sA, SNIPER * Math.pow(cP * pP, 2));
+    const sA = SNIPER * cA * cA * pA, sP = Math.max(sA, SNIPER * cP * cP * pP);   // Pifomètre = 40 × couverture² × précision
     const st = { revealed: m.stats.revealed + f.stats.revealed, found: m.stats.found + f.stats.found, exact: m.stats.exact + f.stats.exact, near: m.stats.near + f.stats.near };
     res[p].sniper = { acq: sA, pot: sP - sA, lost: SNIPER - sP, couv: { now: 100 * cA, max: 100 * cP }, prec: { now: 100 * pA, max: 100 * pP }, stats: st };
     res[p].monde = m.placement; res[p].france = f.placement;
@@ -652,16 +652,31 @@ function vClassement() {
 
 /* --- règles --- */
 function vRegles() {
-  const ex4 = [1, 2, 3, 4].map(k => `<li><span>${k}/4 des joueurs</span><b>×${f1(cote(k, 4))}</b></li>`).join('');
-  const R = (k, t) => `<div class="rule"><div class="k">${k}</div><div>${t}</div></div>`;
-  return `<div><h2>Règles</h2><p class="sub">Pronostique le Top 10 Eurosport des athlètes de l'année, en Monde et en France. Ton score se compose de quatre éléments.</p></div>
-  <section class="card stack" style="gap:18px">
-  ${R('Monde et France', 'Pour chaque classement, tu établis ton Top 10. Chaque athlète de ton Top 10 qui figure aussi dans celui d\'Eurosport rapporte un <b>score de placement</b> : <b>4</b> à la bonne place, <b>3</b> à un rang d\'écart, <b>2</b> ailleurs dans le Top 10. Ce score est multiplié par la <b>cote</b> de l\'athlète.')}
-  ${R('La cote', `La cote récompense l'audace. Miser sur l'athlète que tout le monde a mis, c'est confortable, mais ça rapporte peu : <b>×1</b>. Être le seul de la ligue à y croire, c'est risqué, mais ça rapporte gros : <b>×2</b>. Entre les deux, la cote glisse selon le nombre de joueurs qui ont fait le même choix que toi. Elle est arrondie à une décimale.<p style="margin-bottom:0">Exemple, dans une ligue de 4 joueurs :</p><ul class="cotes">${ex4}</ul>`)}
-  ${R('Pifomètre : de 0 à 40', `Le Pifomètre mesure ton flair, tout simplement. Deux questions : as-tu trouvé les bons athlètes ? Les avais-tu mis au bon endroit ? Pas de cote ici : seul ton nez compte. De 0 à 40 pts.<div class="ex">Pifomètre = 40 × (couverture × précision)²</div><ul class="plain"><li><b>Couverture</b> : combien d'athlètes du vrai classement tu avais dans ton Top 10, de 0 à 100 %. Les stars du haut de classement pèsent plus lourd : le 1er vaut 2 fois le 10e (6,7 % pour le 1er, 3,3 % pour le 10e).</li><li><b>Précision</b> : à quel point tes athlètes étaient bien placés, de 0 à 100 %. Chaque rang d'écart coûte 10 % : 80 %, c'est 2 rangs d'écart en moyenne.</li><li><b>Le carré</b> récompense les nez les plus fins : trouver plus d'athlètes et mieux les placer rapporte de plus en plus. Un nez moyen reste modeste, un nez d'exception fait exploser le compteur.</li></ul><div class="ex">Exemple : couverture 62 % et précision 80 % donnent 40 × (0,62 × 0,80)² = 9,8 pts. Un classement parfait vaut 40.</div>`)}
-  ${R('Champion', 'Si ton n°1 est aussi le n°1 d\'Eurosport, tu gagnes un bonus de <b>4 × la cote</b> de cet athlète. Le bonus s\'applique séparément en Monde et en France.')}
-  ${R('Looser', 'Malus si tu n\'avais pas dans ton Top 10 un athlète du Top 10 d\'Eurosport que presque toute la ligue avait. Il s\'applique <b>une seule fois</b>, quel que soit le nombre d\'athlètes manqués, Monde et France confondus. Montant : 2 joueurs <b>0</b>, 3 joueurs <b>−2</b>, 4 joueurs <b>−3</b>, 5 joueurs et plus <b>−5</b>. Jusqu\'à 4 joueurs, tous les autres doivent avoir eu l\'athlète ; à partir de 5, au moins 80 % de la ligue.')}
-  </section><p class="note">Pronos modifiables jusqu'au ${closesLabel()}. Eurosport dévoile un athlète par jour et par classement, du 10e (vers le ${dateOf(10)}) au 1er (le ${dateOf(1)}).</p>${legalNote()}`;
+  const ex4 = [1, 2, 3, 4].map(k => `<li><span>${k}/4 joueurs</span><b>×${f1(cote(k, 4))}</b></li>`).join('');
+  const P = t => `<p style="margin:0">${t}</p>`;
+  return `<div><h2>Règles</h2><p class="sub">Pronostique le Top 10 Eurosport des athlètes de l'année, tous sports confondus, hommes et femmes réunis. Tu joues deux classements : un <b>Monde</b> et un <b>France</b> (un athlète français peut figurer dans les deux). Ton but : marquer un maximum de points, du moins plus que les autres membres de ta ligue, pour légitimer ton titre d'expert sportif.</p></div>
+  <section class="card stack" style="gap:12px"><div class="rule"><div class="k">1. Monde et France</div></div>
+  ${P('Chaque athlète de ton Top 10 qui figure aussi dans celui d\'Eurosport te rapporte des points, selon son <b>placement</b> et sa <b>cote</b>.')}
+  ${P('<b>Placement</b> : <b>4</b> points s\'il est pile à la bonne place, <b>3</b> à 1 rang d\'écart, <b>2</b> à 2 rangs d\'écart, <b>1</b> ailleurs dans le Top 10. Un athlète absent du classement d\'Eurosport, c\'est zéro.')}
+  ${P('<b>Cote</b> : elle récompense l\'audace. Miser sur l\'athlète que tout le monde a mis, c\'est confortable, mais ça rapporte peu : <b>×1</b>. Être le seul de la ligue à y croire, c\'est risqué, mais ça rapporte gros : <b>×2</b>. Entre les deux, la cote glisse selon le nombre de joueurs qui ont fait le même choix que toi. Elle est arrondie à une décimale.')}
+  <div><p class="note" style="margin:0">Exemple dans une ligue de 4 joueurs :</p><ul class="cotes">${ex4}</ul></div>
+  <div class="ex" style="margin:0"><b>Exemple.</b> Léon Marchand est 3e chez Eurosport. Tu l'avais mis 4e : 3 points de placement. Tu es le seul de ta ligue de 4 à l'avoir choisi : cote ×2. Score : 3 × 2 = <b>6 pts</b>.</div>
+  ${P('<b>Score maximum</b> : 40 points par classement, garantis si tes 10 athlètes sont pile à la bonne place. Les cotes peuvent encore faire monter ce score.')}
+  </section>
+  <section class="card stack" style="gap:12px"><div class="rule"><div class="k">2. Pifomètre</div></div>
+  ${P('Le Pifomètre mesure ton flair, tout simplement : as-tu mis les bons athlètes au bon endroit ? Pas de cote ici, seul ton pif compte. Il repose sur deux ingrédients, la <b>couverture</b> et la <b>précision</b>.')}
+  <div class="ex" style="margin:0;text-align:center"><i>Pifomètre = 40 × couverture² × précision</i></div>
+  <div><b>Couverture : as-tu trouvé les bons athlètes ?</b><ul class="plain"><li>Chaque athlète que tu as en commun avec Eurosport t'apporte un % de couverture (jusqu'à 50 % pour les 10 athlètes du Monde et 50 % pour les 10 athlètes de la France). Ta couverture globale est la somme de ces pourcentages. Tu les as tous ? 100 %, chapeau ! Aucun ? 0 %, chou blanc…</li><li>Attention, les stars en haut du classement Eurosport pèsent plus lourd : le 1er apporte 2 fois plus de couverture que le 10e (6,7 % contre 3,3 %). Alors évite de passer à côté d'un grand nom.</li><li>Enfin, la couverture est élevée au carré pour t'inciter à « trouver plus pour gagner plus » : chaque pourcentage de couverture glané rapporte plus que le précédent. Ainsi, passer de 70 à 80 % te rapporte 3 fois plus que passer de 20 à 30 %.</li></ul></div>
+  <div><b>Précision : les as-tu placés au bon endroit ?</b><ul class="plain"><li>Chacun de tes athlètes en commun avec Eurosport reçoit un score de précision selon l'écart entre ta place et celle d'Eurosport : 100 % à la même place, puis 20 % de moins par rang d'écart, jusqu'à 0 % à 5 rangs d'écart ou plus.</li><li>Ta précision globale est la moyenne de la précision de ces athlètes : 100 %, c'est un sans-faute ; 80 %, c'est 1 rang d'écart en moyenne ; 0 %, c'est 5 rangs d'écart ou plus en moyenne.</li><li>Les athlètes que tu as mis à tort ne pénalisent pas ta précision : ils pénalisent déjà ta couverture, c'est déjà bien assez !</li></ul></div>
+  <div><b>Le combo.</b> Le Pifomètre multiplie ta couverture et ta précision, ce qui t'oblige à être à la fois complet et précis pour scorer :<ul class="plain"><li>Tu trouves tous les athlètes mais tu es complètement à l'ouest sur leur placement ? Ta faible précision fera fondre ton Pifomètre comme neige au soleil.</li><li>Tu n'en trouves qu'un seul, mais pile à sa place ? Précision de 100 %, mais couverture ridicule : tu ne marques presque rien non plus.</li></ul></div>
+  <div class="ex" style="margin:0"><b>Exemple.</b> Couverture 62 % et précision 80 % donnent 40 × 0,62² × 0,80 = <b>12,3 pts</b>.</div>
+  ${P('<b>Score maximum</b> : 40 points, couverture et précision à 100 %.')}
+  </section>
+  <section class="card stack" style="gap:12px"><div class="rule"><div class="k">3. Bonus et malus</div></div>
+  ${P('<b>Champion</b> : tu as vu juste sur le vainqueur ? Si ton n°1 est aussi celui d\'Eurosport, tu décroches un bonus de <b>4 × la cote</b> de cet athlète. Il peut être décroché dans les deux classements, si tu trouves les deux champions.')}
+  <div><b>Looser</b> : tu as raté un athlète que presque toute ta ligue avait choisi ? Rater ce que tout le monde avait vu, ça se paie. Le malus s'applique <b>une seule fois</b>, même si tu as raté plusieurs évidences, Monde et France confondus :<ul class="plain"><li>2 joueurs : <b>0</b></li><li>3 joueurs : <b>−2</b></li><li>4 joueurs : <b>−3</b></li><li>5 joueurs et plus : <b>−5</b></li></ul></div>
+  ${P('Jusqu\'à 4 joueurs, tous les autres doivent avoir mis l\'athlète. À partir de 5, il suffit qu\'au moins 80 % de la ligue l\'ait fait.')}
+  </section><p class="note">Tu peux modifier tes pronos jusqu'au ${closesLabel()}. Eurosport dévoile un athlète par jour et par classement, du 10e (vers le ${dateOf(10)}) au 1er (le ${dateOf(1)}).</p>${legalNote()}`;
 }
 
 
@@ -877,14 +892,14 @@ async function runDiagnostic() {
 
 /* --- pronos (enregistrement automatique + validation) --- */
 let saveTimer = null;
-const saveText = () => ui.save ? [ui.save, ui.saveErr ? 'msg err' : 'msg ok'] : STATE.validated[STATE.me] ? ['Pronos validés ✓ Si tu modifies un nom, pense à valider à nouveau.', 'msg ok'] : ['Pronos pas encore validés.', 'note'];
+const saveText = () => ui.save ? [ui.save, ui.saveErr ? 'msg err' : 'msg ok'] : STATE.validated[STATE.me] ? ['Pronos validés ✓ Tu peux les modifier jusqu\'à la clôture.', 'msg ok'] : ['Pronos enregistrés, pas encore validés.', 'note'];
 function paintSave() { const el = document.getElementById('saveMsg'); if (el) { const s = saveText(); el.className = s[1]; el.textContent = s[0]; } }
 function scheduleSave() { ui.dirty = true; STATE.validated[STATE.me] = false; ui.save = 'Modification en cours…'; ui.saveErr = false; paintSave(); clearTimeout(saveTimer); saveTimer = setTimeout(() => flushSave(false), 900); }
 const slotData = () => { const o = {}; CLS.forEach(([c]) => { o[c] = STATE.slots[c].map(x => ({ n: x.n, t: x.t })); }); return o; };
 const syncPicks = () => { CLS.forEach(([c]) => { STATE.picks[STATE.me][c] = STATE.slots[c].slice(0, 10).map(x => x.n); }); };
 async function flushSave(validate) {
   clearTimeout(saveTimer);
-  try { await API.savePicks(STATE.season, slotData(), validate); ui.dirty = false; ui.save = validate ? '' : 'Brouillon enregistré ✓'; ui.saveErr = false; STATE.validated[STATE.me] = !!validate; paintSave(); return true; }
+  try { await API.savePicks(STATE.season, slotData(), validate); ui.dirty = false; ui.save = validate ? '' : 'Modifications enregistrées ✓'; ui.saveErr = false; STATE.validated[STATE.me] = !!validate; paintSave(); return true; }
   catch (e) { ui.dirty = false; ui.save = /closed/.test(String(e.message)) ? 'Les pronos sont clos : ils ne sont plus modifiables.' : /duplicate/.test(String(e.message)) ? 'Pas enregistré : un athlète est saisi deux fois.' : errMsg(e); ui.saveErr = true; paintSave(); if (/closed/.test(String(e.message))) refresh().catch(() => {}); return false; }
 }
 /* Tuiles : chaque athlète est une tuile qu'on déplace (glisser par la poignée, ou boutons ▲ ▼). Emplacements 1 à 10 = Top 10, R1 à R5 = réserve. */
@@ -892,7 +907,7 @@ const tileHtml = (c, label, i) => {
   const t = STATE.slots[c][i], filled = !!t.n.trim(), dup = dupSet(STATE.slots[c].map(x => x.n)).has(i), reserve = i >= 10;
   return `<div class="pt${filled ? ' filled' : ''}${reserve ? ' reserve' : ''}" id="tile-${c}-${i}">
     <div class="pt1"><button type="button" class="grip" data-grip="${c}:${i}" aria-label="Déplacer ${label} place ${i + 1}" title="Glisser pour déplacer">⠿</button><span class="num">${reserve ? 'R' + (i - 9) : i + 1}</span><span class="sp" id="sp-${c}-${i}"></span>
-      <input id="in-${c}-${i}" data-c="${c}" data-i="${i}" list="athletes" value="${esc(t.n)}" class="${dup ? 'dup' : ''}" autocomplete="off" aria-label="${label} ${reserve ? 'réserve ' + (i - 9) : 'place ' + (i + 1)}" placeholder="${reserve ? 'Réserve' : 'Athlète'}" maxlength="80">
+      <input id="in-${c}-${i}" data-c="${c}" data-i="${i}" value="${esc(t.n)}" class="${dup ? 'dup' : ''}" autocomplete="off" aria-label="${label} ${reserve ? 'réserve ' + (i - 9) : 'place ' + (i + 1)}" placeholder="${reserve ? 'Réserve' : 'Athlète'}" maxlength="80">
       <span class="mv"><button type="button" data-mv="${c}:${i}:-1" aria-label="Monter"${i === 0 ? ' disabled' : ''}>▲</button><button type="button" data-mv="${c}:${i}:1" aria-label="Descendre"${i === SLOTS - 1 ? ' disabled' : ''}>▼</button></span></div>
     <div class="pt2"><select id="ps-${c}-${i}" data-psport="${c}:${i}" aria-label="Sport de l'athlète ${label} ${i + 1}"${filled ? '' : ' disabled'}>${sportOpts(sportOf(t.n))}</select>
       <input id="nt-${c}-${i}" data-note="${c}:${i}" value="${esc(t.t)}" maxlength="200" autocomplete="off" placeholder="Note perso (privée)" aria-label="Note personnelle ${label} ${i + 1}"></div></div>`;
@@ -913,7 +928,7 @@ function vPronos() {
   }
   const col = ([c, label]) => `<section class="card"><h3>${label}</h3><div id="tiles-${c}">${tilesHtml(c, label)}</div></section>`;
   const s = saveText();
-  return `<div><h2>Mes pronos</h2><p class="sub">Compose ton Top 10 Monde et ton Top 10 France. Tout s'enregistre au fur et à mesure. Déplace les tuiles avec la poignée ⠿ ou les boutons ▲ ▼. Les cinq emplacements de réserve te servent de brouillon : seuls les dix premiers comptent. Tu peux noter pour toi-même ce que l'athlète a fait cette année : cette note reste privée. Les noms proposés ne sont que des suggestions, le gamemaster harmonise les orthographes différentes.</p></div>
+  return `<div><h2>Mes pronos</h2><p class="sub">Compose ton Top 10 Monde et ton Top 10 France.<br>Déplace les tuiles avec la poignée ⠿ ou les boutons ▲ ▼.<br>Les cinq emplacements de réserve servent de brouillon : seuls les Top 10 sont retenus.<br>Tu peux noter ce que l’athlète a fait cette année : cette antisèche reste pour toi.<br>Tes pronos s’enregistrent automatiquement. Clique sur <b>Valider</b> quand tes deux Top 10 sont complets pour mettre les rappels en sourdine.</p></div>
     <section class="card cdcard"><h3>Clôture des pronos dans</h3>${cdHtml()}<p style="margin-top:10px">Modifiables jusqu'au ${closesLabel()}</p></section>
     <button class="btn gold block" data-act="save">Valider mes pronos</button><div class="${s[1]}" id="saveMsg">${esc(s[0])}</div>${col(CLS[0])}${col(CLS[1])}<div><button class="btn ghost block" data-act="dl-own">Télécharger mes pronos (CSV)</button><p class="note" style="margin:6px 0 0">Ta copie personnelle : tes dix athlètes par classement, ta réserve et tes notes. Un fichier à garder au chaud.</p></div>`;
 }
@@ -1043,11 +1058,13 @@ function vGm() {
 }
 
 /* --- assemblage --- */
+/* Suggestions de noms : réservées au gamemaster, et seulement après la clôture (liste des anciens classements + noms des pronos des joueurs). */
 function fillDatalist() {
+  const dl = document.getElementById('athletes'); if (!dl) return;
+  if (!(locked() && isAdmin(STATE.me))) { dl.innerHTML = ''; return; }
   const names = new Set(ATHLETES.map(a => a[0]));
-  CLS.forEach(([c]) => STATE.actual[c].forEach(x => { if (x) names.add(x); }));
-  STATE.picks[STATE.me][CLS[0][0]].concat(STATE.picks[STATE.me][CLS[1][0]]).forEach(x => { if (x) names.add(x); });
-  document.getElementById('athletes').innerHTML = [...names].sort((a, b) => a.localeCompare(b, 'fr')).map(x => `<option value="${esc(x)}">`).join('');
+  Object.values(STATE.picks).forEach(o => Object.values(o).forEach(a => a.forEach(x => { if (x) names.add(x); })));
+  dl.innerHTML = [...names].sort((a, b) => a.localeCompare(b, 'fr')).map(x => `<option value="${esc(x)}">`).join('');
 }
 /* Bandeau d'invitation : application installée, notifications pas encore activées. Un seul geste, la demande d'autorisation exige un tap. */
 const PUSH_HIDE = 'classement_push_hide_until';
